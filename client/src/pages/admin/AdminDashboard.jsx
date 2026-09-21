@@ -33,7 +33,7 @@ import autoTable from 'jspdf-autotable'
 const TABS = [
   { key: 'overview', label: 'Overview Analytics', icon: LayoutDashboard },
   { key: 'lands', label: 'Land Inventory', icon: Map },
-  { key: 'mapview', label: 'Global Map View', icon: Globe },
+  { key: 'mapview', label: 'Map View', icon: Globe },
   { key: 'users', label: 'User Directory', icon: Users },
   { key: 'transactions', label: 'Transactions', icon: CreditCard },
   { key: 'installments', label: 'Installment Accounts', icon: Wallet },
@@ -2375,7 +2375,7 @@ export default function AdminDashboard() {
 
   const renderMapView = () => renderMapExplorer({
     data: listings,
-    title: 'Global Map View',
+    title: 'Map View',
     subtitle: 'All Terrava land listings across every branch on one interactive map',
     branchFilter: mapBranchFilter,
     setBranchFilter: setMapBranchFilter
