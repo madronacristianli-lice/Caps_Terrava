@@ -9,7 +9,7 @@ import {
 
 const NAV_ITEMS = [
   { key: 'overview', to: '/admin', label: 'Overview Analytics', icon: LayoutDashboard },
-  { key: 'lands', to: '/admin', label: 'Global Land Inventory', icon: Map },
+  { key: 'lands', to: '/admin', label: 'Land Inventory', icon: Map },
   { key: 'mapview', to: '/admin', label: 'Global Map View', icon: Globe },
   { key: 'users', to: '/admin/users', label: 'User Directory', icon: Users },
   { key: 'blockchain', to: '/admin', label: 'Blockchain Ledger', icon: Link2 },

@@ -32,7 +32,7 @@ import autoTable from 'jspdf-autotable'
 
 const TABS = [
   { key: 'overview', label: 'Overview Analytics', icon: LayoutDashboard },
-  { key: 'lands', label: 'Global Land Inventory', icon: Map },
+  { key: 'lands', label: 'Land Inventory', icon: Map },
   { key: 'mapview', label: 'Global Map View', icon: Globe },
   { key: 'users', label: 'User Directory', icon: Users },
   { key: 'transactions', label: 'Transactions', icon: CreditCard },
