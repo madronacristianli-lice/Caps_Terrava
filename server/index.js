@@ -104,13 +104,19 @@ const start = async () => {
       console.log('Assigned demo seller to Main Tagum branch');
     }
 
-    app.listen(PORT, () => {
-      console.log(`Server running on http://localhost:${PORT}`);
-      startOverdueCron();
-    });
+    // Vercel invokes the exported Express app as a serverless function and
+    // must not keep a persistent listener open. Local development still uses
+    // the normal `npm start` listener.
+    if (!process.env.VERCEL) {
+      app.listen(PORT, () => {
+        console.log(`Server running on http://localhost:${PORT}`);
+        startOverdueCron();
+      });
+    }
   } catch (error) {
     console.error('Unable to start server:', error);
   }
 };
 
+module.exports = app;
 start();
