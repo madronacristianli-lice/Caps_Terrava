@@ -4,21 +4,24 @@ export default function AuthLayout({ children, mode = 'login' }) {
   const isLogin = mode === 'login'
 
   const features = [
-    { icon: MapPin, title: 'Verified Listings', desc: 'Browse land listings verified on GIS maps.' },
-    { icon: Clock, title: 'Track Payments', desc: 'Monitor payment milestones and deadlines.' },
-    { icon: Shield, title: 'Blockchain Secured', desc: 'Every transaction is cryptographically verified.' }
+    { icon: MapPin, title: 'Verified Listings' },
+    { icon: Clock, title: 'Track Payments' },
+    { icon: Shield, title: 'Blockchain Secured' }
   ]
 
   return (
     <div
-      className="min-h-screen flex flex-col lg:flex-row items-center justify-center gap-10 p-6 lg:p-12 bg-cover bg-center bg-no-repeat relative"
-      style={{ backgroundImage: "url('/uploads/backgroun%20picture.jpg')" }}
+      className="relative flex min-h-[100dvh] flex-col items-center justify-center gap-8 overflow-y-auto bg-cover bg-center bg-no-repeat p-4 sm:p-6 lg:flex-row lg:items-start lg:gap-10 lg:p-10"
+      style={{
+        backgroundColor: '#064e3b',
+        backgroundImage: "linear-gradient(120deg, rgba(2, 44, 34, 0.72), rgba(6, 95, 70, 0.48)), url('/terrava-auth-bg.jpg')",
+      }}
     >
       {/* Dark overlay for better readability */}
       <div className="absolute inset-0 bg-emerald-950/55" />
 
       {/* Left branding card */}
-      <div className="relative w-full lg:w-[42%] p-6 lg:p-10 rounded-3xl flex flex-col lg:min-h-[85vh] lg:max-h-[85vh] bg-emerald-950/35 backdrop-blur-sm border border-white/10 shadow-2xl">
+      <div className={`relative flex w-full flex-col rounded-3xl border border-white/10 bg-emerald-950/35 p-6 shadow-2xl backdrop-blur-sm lg:w-[42%] lg:p-10 ${isLogin ? 'lg:self-center' : 'lg:self-start'}`}>
 
         <div className="relative flex flex-col flex-1">
           {/* Secured badge */}
@@ -53,7 +56,7 @@ export default function AuthLayout({ children, mode = 'login' }) {
             {isLogin ? <>Welcome<br />Back</> : <>Join<br />Terrava</>}
           </h2>
 
-          <p className="text-white/95 text-base md:text-lg leading-relaxed mb-8 font-medium drop-shadow-md">
+          <p className="text-white/95 text-base md:text-lg leading-relaxed mb-36 font-medium drop-shadow-md">
             {isLogin
               ? 'Sign in to access your land listings, track payments, and manage your properties.'
               : 'Create an account to start buying or selling land with confidence, transparency, and blockchain-backed payments.'}
@@ -72,7 +75,6 @@ export default function AuthLayout({ children, mode = 'login' }) {
                   <f.icon className="w-5 h-5 text-emerald-300" />
                 </div>
                 <h3 className="font-bold text-sm mb-1 text-white">{f.title}</h3>
-                <p className="text-white/85 text-xs leading-relaxed">{f.desc}</p>
               </div>
             ))}
           </div>
@@ -81,7 +83,7 @@ export default function AuthLayout({ children, mode = 'login' }) {
         <p className="text-white/80 text-sm mt-8 font-medium">© 2025 Terrava. All rights reserved.</p>
       </div>
       {/* Right form card */}
-      <div className="relative w-full lg:w-[40%] bg-white/85 backdrop-blur-md rounded-3xl shadow-2xl p-8 lg:min-h-[85vh] lg:max-h-[85vh] lg:overflow-y-auto">
+      <div className={`relative w-full rounded-3xl border border-white/60 bg-white/90 p-6 shadow-2xl backdrop-blur-md sm:p-8 lg:w-[40%] lg:p-9 ${isLogin ? 'lg:self-center' : 'lg:self-start lg:max-h-[calc(100dvh-2rem)] lg:overflow-y-auto'}`}>
         {children}
       </div>
     </div>

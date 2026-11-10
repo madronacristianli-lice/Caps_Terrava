@@ -3,13 +3,16 @@ import api from '../api/api.js'
 import MapView from '../components/MapView.jsx'
 import Spinner from '../components/Spinner.jsx'
 import EmptyState from '../components/EmptyState.jsx'
-import { MapPin, CheckCircle2, Clock, Maximize, ChevronDown, ChevronUp, Receipt, Printer, Landmark, CreditCard, Wallet, Calendar, AlertTriangle } from 'lucide-react'
+import { MapPin, CheckCircle2, Clock, Maximize, ChevronDown, ChevronLeft, ChevronRight, Receipt, Printer, Landmark, CreditCard, Wallet, Calendar, AlertTriangle } from 'lucide-react'
 import PesoIcon from '../components/PesoIcon.jsx'
+import { displayBranchName } from '../utils/branches.js'
 
 export default function MyLands() {
   const [lands, setLands] = useState([])
   const [loading, setLoading] = useState(true)
   const [expandedId, setExpandedId] = useState(null)
+  const [receiptPages, setReceiptPages] = useState({})
+  const receiptsPerPage = 3
 
   useEffect(() => {
     api.get('/listings/assigned/me')
@@ -40,6 +43,7 @@ export default function MyLands() {
   const printReceipt = (land, txn) => {
     const r = parseReceipt(txn)
     const printWindow = window.open('', '_blank')
+    if (!printWindow) return
     printWindow.document.write(`
       <html>
         <head>
@@ -49,9 +53,7 @@ export default function MyLands() {
             body { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 40px 24px; color: #111827; background: #fff; max-width: 600px; margin: 0 auto; }
             .receipt { border: 1px dashed #d1d5db; border-radius: 20px; padding: 28px; background: #ffffff; }
             .header { text-align: center; border-bottom: 2px dashed #d1d5db; padding-bottom: 22px; margin-bottom: 22px; }
-            .brand { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 6px; }
-            .brand-icon { width: 38px; height: 38px; background: #059669; border-radius: 10px; display: flex; align-items: center; justify-content: center; }
-            .brand-icon svg { width: 22px; height: 22px; color: #fff; }
+            .brand { display: block; text-align: center; margin-bottom: 6px; }
             .brand-name { font-size: 24px; font-weight: 800; color: #065f46; margin: 0; }
             .tagline { font-size: 13px; color: #6b7280; margin: 0 0 10px; }
             .badge { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; color: #065f46; background: #d1fae5; padding: 5px 14px; border-radius: 999px; text-transform: uppercase; }
@@ -82,9 +84,6 @@ export default function MyLands() {
           <div class="receipt">
             <div class="header">
               <div class="brand">
-                <div class="brand-icon">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="4"/><path d="M12 12h.01"/><path d="M17 12h.01"/><path d="M7 12h.01"/></svg>
-                </div>
                 <h1 class="brand-name">Terrava</h1>
               </div>
               <p class="tagline">Land Selling System</p>
@@ -113,7 +112,7 @@ export default function MyLands() {
             <div class="card">
               <p class="card-title">Payment Details</p>
               <div class="card-row"><span>Method</span><span style="text-transform: capitalize;">${r.method}</span></div>
-              <div class="card-row"><span>Branch Paid</span><span>${r.branch}</span></div>
+              <div class="card-row"><span>Branch Paid</span><span>${displayBranchName(r.branch)}</span></div>
               <div class="card-row"><span>Status</span><span class="status status-${r.status}">${r.status}</span></div>
             </div>
 
@@ -130,14 +129,21 @@ export default function MyLands() {
         </body>
       </html>
     `)
+    const finishPrint = () => {
+      if (!printWindow.closed) printWindow.close()
+    }
+    printWindow.onload = () => {
+      printWindow.focus()
+      printWindow.onafterprint = finishPrint
+      printWindow.print()
+      window.setTimeout(finishPrint, 1000)
+    }
     printWindow.document.close()
-    printWindow.focus()
-    printWindow.print()
   }
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
-      <div>
+      <div className="rounded-2xl border border-brand-100 bg-white/80 px-5 py-4 shadow-sm">
         <h1 className="text-2xl md:text-3xl font-extrabold text-gray-900">My Purchased Lands</h1>
         <p className="text-gray-500 mt-1">Properties assigned to you by a seller. Track your payment status here.</p>
       </div>
@@ -151,6 +157,12 @@ export default function MyLands() {
         <div className="space-y-5">
           {lands.map((land) => {
             const verifiedTxns = (land.transactions || []).filter((t) => t.status === 'verified')
+            const receiptPageCount = Math.max(1, Math.ceil(verifiedTxns.length / receiptsPerPage))
+            const receiptPage = Math.min(receiptPages[land.id] || 1, receiptPageCount)
+            const visibleReceipts = verifiedTxns.slice(
+              (receiptPage - 1) * receiptsPerPage,
+              receiptPage * receiptsPerPage
+            )
             const totalPaid = verifiedTxns.reduce((sum, t) => sum + Number(t.amount), 0)
             const originalPrice = Number(land.price)
             const remaining = Math.max(0, originalPrice - totalPaid)
@@ -159,9 +171,15 @@ export default function MyLands() {
             const isExpanded = expandedId === land.id
 
             return (
-              <div key={land.id} className="bg-white rounded-2xl shadow-card border border-gray-100 overflow-hidden">
+              <div
+                key={land.id}
+                className={`relative overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.08)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_34px_rgba(15,23,42,0.12)] ${
+                  isFullyPaid ? 'border-l-4 border-l-emerald-500' : 'border-l-4 border-l-amber-400'
+                }`}
+              >
+                <div className={`absolute inset-x-0 top-0 h-1 ${isFullyPaid ? 'bg-emerald-500' : 'bg-amber-400'}`} />
                 {/* Header */}
-                <div className="p-5">
+                <div className="p-5 sm:p-6">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -188,17 +206,17 @@ export default function MyLands() {
 
                   {/* Payment breakdown */}
                   <div className="mt-5 grid grid-cols-3 gap-3">
-                    <div className="bg-gray-50 rounded-xl p-3 text-center border border-gray-100 flex flex-col items-center">
+                    <div className="bg-slate-50 rounded-xl p-3 text-center border border-slate-200 flex flex-col items-center shadow-sm">
                       <PesoIcon className="w-4 h-4 text-gray-400 mb-1" />
                       <p className="text-xs text-gray-400 mb-0.5">Original Price</p>
                       <p className="text-sm font-bold text-gray-900">₱{originalPrice.toLocaleString()}</p>
                     </div>
-                    <div className="bg-brand-50 rounded-xl p-3 text-center border border-brand-100 flex flex-col items-center">
+                    <div className="bg-emerald-50 rounded-xl p-3 text-center border border-emerald-200 flex flex-col items-center shadow-sm">
                       <CheckCircle2 className="w-4 h-4 text-brand-500 mb-1" />
                       <p className="text-xs text-brand-600 mb-0.5">Total Paid</p>
                       <p className="text-sm font-bold text-brand-700">₱{totalPaid.toLocaleString()}</p>
                     </div>
-                    <div className={`rounded-xl p-3 text-center border flex flex-col items-center ${isFullyPaid ? 'bg-green-50 border-green-100' : 'bg-red-50 border-red-100'}`}>
+                    <div className={`rounded-xl p-3 text-center border flex flex-col items-center shadow-sm ${isFullyPaid ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
                       {isFullyPaid ? <CheckCircle2 className="w-4 h-4 text-green-500 mb-1" /> : <Clock className="w-4 h-4 text-red-400 mb-1" />}
                       <p className={`text-xs mb-0.5 ${isFullyPaid ? 'text-green-600' : 'text-red-500'}`}>Remaining</p>
                       <p className={`text-sm font-bold ${isFullyPaid ? 'text-green-700' : 'text-red-700'}`}>
@@ -286,16 +304,18 @@ export default function MyLands() {
                     onClick={() => setExpandedId(isExpanded ? null : land.id)}
                     className="mt-4 flex items-center gap-2 text-sm text-brand-600 font-semibold hover:underline"
                   >
-                    {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                    <span className={`inline-flex transition-transform duration-300 ${isExpanded ? 'rotate-180 scale-110' : ''}`}>
+                      <ChevronDown className="w-4 h-4" />
+                    </span>
                     {isExpanded ? 'Hide Details' : 'View Details & Map'}
                   </button>
                 </div>
 
                 {/* Expanded: map + land details */}
                 {isExpanded && (
-                  <div className="border-t border-gray-100">
+                  <div className="border-t border-slate-200 bg-slate-50/40">
                     <div className="h-56">
-                      <MapView singleListing={land} height="100%" flyTo={land} />
+                      <MapView singleListing={land} height="100%" flyTo={land} showLayersControl={false} showAttribution={false} />
                     </div>
                     <div className="p-5 grid grid-cols-2 gap-3">
                       <div className="flex items-center gap-2 text-sm text-gray-600">
@@ -319,10 +339,10 @@ export default function MyLands() {
                           <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Payment History & Receipts</p>
                         </div>
                         <div className="space-y-3">
-                          {verifiedTxns.map((t) => {
+                          {visibleReceipts.map((t) => {
                             const r = parseReceipt(t)
                             return (
-                              <div key={t.id} className="bg-brand-50 rounded-xl p-4 border border-brand-100">
+                              <div key={t.id} className="bg-emerald-50/70 rounded-xl p-4 border border-emerald-200 shadow-sm">
                                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
                                   <div className="flex items-center gap-2">
                                     <div className="bg-white p-1.5 rounded-lg border border-brand-100">
@@ -348,7 +368,7 @@ export default function MyLands() {
                                   </div>
                                   <div className="flex items-center gap-1.5 text-gray-600">
                                     <Landmark className="w-3.5 h-3.5 text-gray-400" />
-                                    <span>{r.branch}</span>
+                                    <span>{displayBranchName(r.branch)}</span>
                                   </div>
                                   <div className="col-span-2 flex items-center gap-1.5 text-gray-900 font-semibold">
                                     <PesoIcon className="w-3.5 h-3.5 text-brand-600" />
@@ -365,6 +385,37 @@ export default function MyLands() {
                             )
                           })}
                         </div>
+                        {verifiedTxns.length > receiptsPerPage && (
+                          <div className="mt-4 flex flex-col gap-3 border-t border-brand-100 pt-3 sm:flex-row sm:items-center sm:justify-between">
+                            <p className="text-xs text-gray-500">
+                              Showing <span className="font-bold text-gray-700">{(receiptPage - 1) * receiptsPerPage + 1}</span>
+                              {' '}to{' '}
+                              <span className="font-bold text-gray-700">{Math.min(receiptPage * receiptsPerPage, verifiedTxns.length)}</span>
+                              {' '}of <span className="font-bold text-gray-700">{verifiedTxns.length}</span> receipts
+                            </p>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setReceiptPages((pages) => ({ ...pages, [land.id]: Math.max(1, receiptPage - 1) }))}
+                                disabled={receiptPage <= 1}
+                                className="inline-flex items-center gap-1 rounded-lg border border-brand-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-brand-700 transition hover:bg-brand-100 disabled:cursor-not-allowed disabled:opacity-40"
+                              >
+                                <ChevronLeft className="h-3.5 w-3.5" /> Previous
+                              </button>
+                              <span className="min-w-[4.5rem] text-center text-xs font-bold text-gray-700">
+                                Page {receiptPage} of {receiptPageCount}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setReceiptPages((pages) => ({ ...pages, [land.id]: Math.min(receiptPageCount, receiptPage + 1) }))}
+                                disabled={receiptPage >= receiptPageCount}
+                                className="inline-flex items-center gap-1 rounded-lg border border-brand-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-brand-700 transition hover:bg-brand-100 disabled:cursor-not-allowed disabled:opacity-40"
+                              >
+                                Next <ChevronRight className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

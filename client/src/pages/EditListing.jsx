@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 import api from '../api/api.js'
@@ -10,18 +10,59 @@ import { ArrowLeft } from 'lucide-react'
 export default function EditListing() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
   const { user } = useAuth()
   const { addToast } = useToast()
-  const [listing, setListing] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [listing, setListing] = useState(() => location.state?.listing || null)
+  const [loading, setLoading] = useState(() => !location.state?.listing)
   const [saving, setSaving] = useState(false)
 
+  const goBack = () => {
+    if (location.state?.from) {
+      navigate(location.state.from, location.state.from === '/admin' ? { state: { tab: location.state.tab || 'lands' } } : undefined)
+      return
+    }
+    if (window.history.length > 1) {
+      navigate(-1)
+      return
+    }
+    navigate(user?.role === 'admin' ? '/admin' : '/dashboard', { replace: true })
+  }
+
   useEffect(() => {
-    api.get(`/listings/${id}`)
-      .then((res) => setListing(res.data))
-      .catch(() => addToast('Failed to load listing', 'error'))
+    if (location.state?.listing && String(location.state.listing.id) === String(id)) {
+      setListing(location.state.listing)
+      setLoading(false)
+      return
+    }
+    const loadListing = async () => {
+      try {
+        const res = await api.get(`/listings/${id}`)
+        setListing(res.data)
+        return
+      } catch (error) {
+        // Admin inventory can include archived/admin-only listings that may
+        // not be returned by the public single-listing lookup.
+        if (user?.role === 'admin') {
+          try {
+            const inventory = await api.get('/listings?all=true')
+            const match = inventory.data.find((item) => String(item.id) === String(id))
+            if (match) {
+              setListing(match)
+              return
+            }
+          } catch {
+            // Use the original error message below.
+          }
+        }
+        // Keep the page-level "Listing not found" state as the single error
+        // message. This avoids duplicate/stale toasts when the fallback lookup
+        // is racing with the direct lookup.
+      }
+    }
+    loadListing()
       .finally(() => setLoading(false))
-  }, [id, addToast])
+  }, [id, user?.role, addToast, location.state])
 
   const handleSubmit = async (payload) => {
     console.log('EditListing payload:', payload)
@@ -63,6 +104,7 @@ export default function EditListing() {
 
     try {
       await api.put(`/listings/${id}`, data, { headers: { 'Content-Type': 'multipart/form-data' } })
+      if (payload._draftKey) localStorage.removeItem(payload._draftKey)
       addToast('Listing updated successfully!', 'success')
       navigate(`/listing/${id}`)
     } catch (err) {
@@ -80,7 +122,7 @@ export default function EditListing() {
       <div className="mb-6">
         <button
           type="button"
-          onClick={() => navigate(-1)}
+          onClick={goBack}
           className="mb-3 inline-flex items-center gap-2 text-sm font-semibold text-brand-600 hover:text-brand-800 transition"
         >
           <ArrowLeft className="w-4 h-4" /> Back
@@ -105,6 +147,7 @@ export default function EditListing() {
           existingPhotos={listing.photos || []}
           existingPhotoGeotags={listing.photo_geotags || []}
           initialBranch={user?.branch || listing?.branch || ''}
+          branchLocked={user?.role === 'seller'}
           onSubmit={handleSubmit}
         />
       )}

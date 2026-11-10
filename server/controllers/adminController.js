@@ -106,6 +106,9 @@ exports.updateUserProfile = async (req, res) => {
   try {
     const user = await db.User.findByPk(req.params.id);
     if (!user) return res.status(404).json({ error: 'User not found' });
+    if (user.role === 'buyer') {
+      return res.status(403).json({ error: 'Buyer profiles cannot be edited by an administrator.' });
+    }
     if (user.role === 'admin' && req.user.id !== user.id) {
       return res.status(403).json({ error: 'Only the admin can update their own profile.' });
     }

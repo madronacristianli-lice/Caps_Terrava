@@ -3,14 +3,12 @@ import { useToast } from '../context/ToastContext.jsx'
 import api from '../api/api.js'
 import Spinner from './Spinner.jsx'
 import { X, MessageCircle, Send, Landmark, User } from 'lucide-react'
+import { displayBranchName } from '../utils/branches.js'
 
 export default function MessageSellerModal({ listing, preferredBranch, onClose, onSent }) {
   const { addToast } = useToast()
   const [loading, setLoading] = useState(false)
-  const [message, setMessage] = useState(() => {
-    const branch = preferredBranch || listing.seller?.branch || listing.branch || 'the main branch'
-    return `Hi ${listing.seller?.full_name || 'Seller'},\n\nI'm interested in reserving "${listing.title}" located at ${listing.location_text}. I plan to visit your branch at ${branch} to complete the transaction.\n\nPlease let me know the next steps.`
-  })
+  const [message, setMessage] = useState('')
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -55,7 +53,7 @@ export default function MessageSellerModal({ listing, preferredBranch, onClose, 
             </div>
             <div className="flex items-center gap-2 text-sm text-gray-700">
               <Landmark className="w-4 h-4 text-brand-600 flex-shrink-0" />
-              <span>Branch: {preferredBranch || listing.seller?.branch || listing.branch || '—'}</span>
+              <span>Branch: {displayBranchName(preferredBranch || listing.seller?.branch || listing.branch || '—')}</span>
             </div>
           </div>
 
@@ -67,7 +65,7 @@ export default function MessageSellerModal({ listing, preferredBranch, onClose, 
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               className="w-full border border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm resize-none"
-              placeholder="Write your message to the seller..."
+              placeholder="Example: I am interested in this land. May I know the payment terms and schedule for a site visit?"
             />
             <p className="text-xs text-gray-400 mt-1.5">
               The seller will be notified and can reply through the Messages page.

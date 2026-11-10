@@ -5,8 +5,16 @@ import { useToast } from '../context/ToastContext.jsx'
 import { Eye, EyeOff, ShieldCheck, ArrowRight, Users } from 'lucide-react'
 import AuthLayout from '../components/AuthLayout.jsx'
 import api from '../api/api.js'
+import GoogleSignInButton from '../components/GoogleSignInButton.jsx'
 
-const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID
+const normalizePhilippinePhone = (value) => {
+  const raw = String(value || '').replace(/[\s()-]/g, '')
+  if (!raw) return ''
+  if (raw.startsWith('+63')) return `+63${raw.slice(3).replace(/\D/g, '')}`
+  if (raw.startsWith('0063')) return `+63${raw.slice(4).replace(/\D/g, '')}`
+  if (raw.startsWith('0')) return `+63${raw.slice(1).replace(/\D/g, '')}`
+  return `+63${raw.replace(/\D/g, '')}`
+}
 
 const Field = ({ label, required, children }) => (
   <div>
@@ -28,11 +36,14 @@ export default function Register() {
   const [error, setError] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [verificationEmail, setVerificationEmail] = useState('')
+  const [otp, setOtp] = useState('')
   const navigate = useNavigate()
   const { login } = useAuth()
   const { addToast } = useToast()
 
   const set = (key) => (e) => setForm({ ...form, [key]: e.target.value })
+  const normalizePhoneField = (key) => () => setForm((current) => ({ ...current, [key]: normalizePhilippinePhone(current[key]) }))
 
   const validatePassword = (pwd) => {
     if (pwd.length < 8) return 'Password must be at least 8 characters'
@@ -41,37 +52,14 @@ export default function Register() {
     return ''
   }
 
-  const handleGoogleSignIn = async () => {
-    if (!GOOGLE_CLIENT_ID) return addToast('Google sign-in not configured', 'error')
-    const loadScript = () => new Promise((resolve, reject) => {
-      if (document.getElementById('google-gsi-script')) { resolve(); return }
-      const script = document.createElement('script')
-      script.id = 'google-gsi-script'
-      script.src = 'https://accounts.google.com/gsi/client'
-      script.async = true
-      script.defer = true
-      script.onload = resolve
-      script.onerror = reject
-      document.body.appendChild(script)
-    })
-
-    const handleCredential = async (response) => {
-      try {
-        const res = await api.post('/auth/google', { credential: response.credential })
-        login(res.data)
-        addToast('Account created successfully!', 'success')
-        navigate(res.data.user?.role === 'admin' ? '/admin' : '/')
-      } catch (err) {
-        addToast(err.response?.data?.error || 'Google sign-in failed', 'error')
-      }
-    }
-
+  const handleGoogleCredential = async (response) => {
     try {
-      await loadScript()
-      window.google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: handleCredential })
-      window.google.accounts.id.prompt()
-    } catch {
-      addToast('Failed to load Google sign-in', 'error')
+      const res = await api.post('/auth/google', { credential: response.credential })
+      login(res.data)
+      addToast('Account created successfully!', 'success')
+      navigate(res.data.user?.role === 'admin' ? '/admin' : '/')
+    } catch (err) {
+      addToast(err.response?.data?.error || 'Google sign-in failed', 'error')
     }
   }
 
@@ -89,15 +77,36 @@ export default function Register() {
       .filter(Boolean).join(' ')
     try {
       const res = await api.post('/auth/register', { ...form, full_name })
-      login(res.data)
-      addToast('Account created successfully!', 'success')
-      navigate('/')
+      setVerificationEmail(form.email)
+      addToast('Verification code sent to your phone.', 'success')
     } catch (err) {
       setError(err.response?.data?.error || 'Registration failed')
       addToast(err.response?.data?.error || 'Registration failed', 'error')
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleVerify = async (e) => {
+    e.preventDefault()
+    setError('')
+    setLoading(true)
+    try {
+      const res = await api.post('/auth/register/verify', { email: verificationEmail, code: otp })
+      login(res.data)
+      addToast('Account verified successfully!', 'success')
+      navigate('/')
+    } catch (err) {
+      setError(err.response?.data?.error || 'Verification failed')
+      addToast(err.response?.data?.error || 'Verification failed', 'error')
+    } finally { setLoading(false) }
+  }
+
+  const resendOtp = async () => {
+    try {
+      await api.post('/auth/register/resend', { email: verificationEmail })
+      addToast('A new verification code was sent.', 'success')
+    } catch (err) { addToast(err.response?.data?.error || 'Could not resend code', 'error') }
   }
 
   return (
@@ -127,19 +136,11 @@ export default function Register() {
           </div>
         )}
 
-        <button
-          type="button"
-          onClick={handleGoogleSignIn}
-          className="w-full bg-white border border-[#dadce0] text-[#3c4043] py-2.5 rounded-md font-medium text-sm tracking-wide flex items-center justify-center gap-3 hover:bg-[#f7f8f8] active:bg-[#e8e8e8] transition shadow-sm"
-        >
-          <svg className="w-5 h-5" viewBox="0 0 24 24">
-            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-          </svg>
-          Sign up with Google
-        </button>
+        <GoogleSignInButton
+          text="signup_with"
+          onCredential={handleGoogleCredential}
+          onUnavailable={() => addToast('Google sign-in needs the Terrava OAuth Client ID in client/.env and server/.env.', 'error')}
+        />
 
         <div className="relative my-5">
           <div className="absolute inset-0 flex items-center">
@@ -150,7 +151,17 @@ export default function Register() {
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        {verificationEmail ? <form onSubmit={handleVerify} className="space-y-5">
+          <div className="rounded-2xl bg-emerald-50 border border-emerald-100 p-5 text-center">
+            <h2 className="font-bold text-gray-900">Verify your phone number</h2>
+            <p className="text-sm text-gray-600 mt-1">Enter the 6-digit code sent to your phone.</p>
+          </div>
+          <Field label="Verification Code" required>
+            <input autoFocus inputMode="numeric" maxLength={6} pattern="[0-9]{6}" className="input-field bg-slate-50 rounded-xl text-center tracking-[0.5em] text-xl" value={otp} onChange={e => setOtp(e.target.value.replace(/\D/g, ''))} required />
+          </Field>
+          <button type="submit" disabled={loading || otp.length !== 6} className="w-full bg-emerald-500 text-white py-3 rounded-xl font-semibold disabled:opacity-60">{loading ? 'Verifying…' : 'Verify and Create Account'}</button>
+          <button type="button" onClick={resendOtp} className="w-full text-emerald-600 font-semibold text-sm">Resend code</button>
+        </form> : <form onSubmit={handleSubmit} className="space-y-4">
           {/* Name row */}
           <div className="grid grid-cols-2 gap-4">
             <Field label="First Name" required>
@@ -201,7 +212,7 @@ export default function Register() {
 
           <div className="grid grid-cols-2 gap-4">
             <Field label="Contact Number 1" required>
-              <input type="text" placeholder="+63 912 000 0000" className="input-field bg-slate-50 rounded-xl" value={form.phone} onChange={set('phone')} required />
+              <input type="tel" inputMode="tel" placeholder="0917 000 0000" className="input-field bg-slate-50 rounded-xl" value={form.phone} onChange={set('phone')} onBlur={normalizePhoneField('phone')} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() } }} required />
             </Field>
             <Field label="Contact Number 2">
               <input type="text" placeholder="+63 912 000 0001" className="input-field bg-slate-50 rounded-xl" value={form.phone2} onChange={set('phone2')} />
@@ -263,7 +274,7 @@ export default function Register() {
           >
             {loading ? 'Creating account…' : <>Create Account <ArrowRight className="w-4 h-4" /></>}
           </button>
-        </form>
+        </form>}
 
         <p className="text-center mt-6 text-sm text-gray-500">
           Already have an account?{' '}

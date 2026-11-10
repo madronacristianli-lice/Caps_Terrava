@@ -3,7 +3,8 @@ import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import {
   LayoutDashboard, Map, Globe, Users, Link2,
-  ChevronLeft, ChevronRight, Store, ListChecks, CreditCard,
+  CreditCard, Wallet, Store,
+  ChevronLeft, ChevronRight,
   Menu, X
 } from 'lucide-react'
 
@@ -11,16 +12,17 @@ const NAV_ITEMS = [
   { key: 'overview', to: '/admin', label: 'Overview Analytics', icon: LayoutDashboard },
   { key: 'lands', to: '/admin', label: 'Land Inventory', icon: Map },
   { key: 'mapview', to: '/admin', label: 'Map View', icon: Globe },
-  { key: 'users', to: '/admin/users', label: 'User Directory', icon: Users },
-  { key: 'blockchain', to: '/admin', label: 'Blockchain Ledger', icon: Link2 },
+  { key: 'users', to: '/admin', label: 'User Directory', icon: Users },
   { key: 'branches', to: '/admin/branches', label: 'Branch Monitoring', icon: Store },
-  { key: 'verifications', to: '/admin/verifications', label: 'Verifications', icon: ListChecks },
-  { key: 'sales', to: '/admin/sales', label: 'Sales Report', icon: CreditCard }
+  { key: 'transactions', to: '/admin', label: 'Transactions', icon: CreditCard },
+  { key: 'installments', to: '/admin', label: 'Installment Accounts', icon: Wallet },
+  { key: 'blockchain', to: '/admin', label: 'Blockchain Ledger', icon: Link2 },
 ]
 
 export default function AdminSidebar({ mobileOpen, onMobileToggle }) {
-  const { user, logout } = useAuth()
-  const { pathname } = useLocation()
+  const { user } = useAuth()
+  const location = useLocation()
+  const { pathname } = location
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('adminSidebarCollapsed') === 'true')
 
   const toggleCollapsed = () => {
@@ -33,8 +35,12 @@ export default function AdminSidebar({ mobileOpen, onMobileToggle }) {
     ? user.full_name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase()
     : 'SA'
 
-  const isActive = (to) => {
-    if (to === '/admin') return pathname === '/admin'
+  const isActive = (key, to) => {
+    if (to === '/admin') {
+      if (pathname === '/admin') return (location.state?.tab || 'overview') === key
+      if (pathname.startsWith('/edit-listing/')) return (location.state?.tab || 'lands') === key
+      return false
+    }
     return pathname === to || pathname.startsWith(`${to}/`)
   }
 
@@ -62,11 +68,12 @@ export default function AdminSidebar({ mobileOpen, onMobileToggle }) {
       {/* Navigation */}
       <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
         {NAV_ITEMS.map(({ key, to, label, icon: Icon }) => {
-          const active = isActive(to)
+          const active = isActive(key, to)
           return (
             <Link
               key={key}
               to={to}
+              state={to === '/admin' ? { tab: key } : undefined}
               onClick={() => mobile && onMobileToggle?.(false)}
               title={label}
               className={`w-full flex items-center gap-3 rounded-xl text-sm font-semibold transition-all duration-200 ${
@@ -96,12 +103,6 @@ export default function AdminSidebar({ mobileOpen, onMobileToggle }) {
               <p className="text-[10px] text-white/50 truncate">{user?.email || 'admin@terra.com'}</p>
             </div>
           </div>
-          <button
-            onClick={logout}
-            className="w-full flex items-center justify-center gap-2 rounded-xl bg-red-500/10 border border-red-500/20 text-red-200 text-xs font-semibold py-2.5 hover:bg-red-500/20 transition"
-          >
-            Log Out
-          </button>
           <p className="text-[11px] text-center text-white/40 font-medium mt-3">© 2026 Terrava</p>
           <p className="text-[10px] text-center text-white/30 mt-0.5">Multi-branch Land Portal</p>
         </div>

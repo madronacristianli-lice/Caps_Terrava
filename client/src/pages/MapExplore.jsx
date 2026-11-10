@@ -3,13 +3,13 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import api from '../api/api.js'
 import MapView from '../components/MapView.jsx'
 import Spinner from '../components/Spinner.jsx'
-import { ChevronDown, ChevronUp, MapPin, Maximize, Tag, X, Eye, MessageCircle, Building2, Search, Home, SlidersHorizontal, ChevronLeft, ChevronRight, Image as ImageIcon } from 'lucide-react'
+import { ChevronDown, MapPin, Maximize, Tag, X, Eye, MessageCircle, Building2, Search, Home, ChevronLeft, ChevronRight, Wheat, Factory } from 'lucide-react'
 import PesoIcon from '../components/PesoIcon.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
 import FavoriteButton from '../components/FavoriteButton.jsx'
 import LandDetailsModal from '../components/LandDetailsModal.jsx'
 import MessageSellerModal from '../components/MessageSellerModal.jsx'
-import { BRANCHES, getBranch } from '../utils/branches.js'
+import { BRANCHES, displayBranchName, getBranch } from '../utils/branches.js'
 
 export default function MapExplore() {
   const { user } = useAuth()
@@ -17,10 +17,12 @@ export default function MapExplore() {
   const navigate = useNavigate()
   const [listings, setListings] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [flyTo, setFlyTo] = useState(null)
   const [selected, setSelected] = useState(null)
   const [expanded, setExpanded] = useState(null)
   const [activeBranch, setActiveBranch] = useState('all')
+  const [activeType, setActiveType] = useState('all')
   const [panelOpen, setPanelOpen] = useState(true)
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [messageOpen, setMessageOpen] = useState(false)
@@ -28,14 +30,20 @@ export default function MapExplore() {
   const [lightboxIndex, setLightboxIndex] = useState(0)
   const [preferredBranch, setPreferredBranch] = useState('Main Tagum')
   const [search, setSearch] = useState('')
+  const [maxPrice, setMaxPrice] = useState('')
   const [branchGuideOpen, setBranchGuideOpen] = useState(false)
   const [branchInfoOpen, setBranchInfoOpen] = useState(false)
 
   useEffect(() => {
+    setLoadError('')
     api.get('/listings')
       .then((res) => {
-        const available = res.data.filter((l) => l.status === 'available')
+        const available = Array.isArray(res.data) ? res.data.filter((l) => l.status === 'available') : []
         setListings(available)
+      })
+      .catch((err) => {
+        setListings([])
+        setLoadError(err.response?.data?.error || 'Unable to load land listings. Please try again.')
       })
       .finally(() => setLoading(false))
   }, [])
@@ -43,10 +51,20 @@ export default function MapExplore() {
   useEffect(() => {
     const params = new URLSearchParams(location.search)
     const b = params.get('branch')
+    const q = params.get('search') || ''
+    const t = params.get('type')
+    const p = params.get('maxPrice') || ''
+    setSearch(q)
+    setActiveType(['Residential', 'Commercial', 'Agricultural', 'Industrial'].includes(t) ? t : 'all')
+    setMaxPrice(p)
     if (b && BRANCHES.includes(b)) {
       setActiveBranch(b)
       setExpanded(b)
       setFlyTo({ branch: b })
+    } else {
+      setActiveBranch('all')
+      setExpanded(null)
+      setFlyTo(null)
     }
   }, [location.search])
 
@@ -65,11 +83,17 @@ export default function MapExplore() {
     ? listings
     : listings.filter((l) => getBranch(l) === activeBranch)
 
-  const filteredListings = branchFiltered.filter((l) => {
+  const typeFiltered = activeType === 'all'
+    ? branchFiltered
+    : branchFiltered.filter((l) => l.zoning_classification === activeType)
+
+  const filteredListings = typeFiltered.filter((l) => {
     const q = search.toLowerCase()
-    return !q ||
+    const matchesSearch = !q ||
       (l.title || '').toLowerCase().includes(q) ||
       (l.location_text || '').toLowerCase().includes(q)
+    const matchesPrice = !maxPrice || Number(l.price) <= Number(maxPrice)
+    return matchesSearch && matchesPrice
   })
 
   const grouped = filteredListings.reduce((acc, l) => {
@@ -85,7 +109,12 @@ export default function MapExplore() {
     setExpanded(getBranch(listing))
     setPanelOpen(true)
     if (user?.role?.toLowerCase() === 'buyer') {
-      setBranchGuideOpen(true)
+      const guideKey = user.id ? `terrava_branch_guide_seen_${user.id}` : null
+      const alreadyShown = guideKey && window.sessionStorage.getItem(guideKey) === 'true'
+      if (!alreadyShown) {
+        setBranchGuideOpen(true)
+        if (guideKey) window.sessionStorage.setItem(guideKey, 'true')
+      }
     }
   }
 
@@ -127,67 +156,104 @@ export default function MapExplore() {
     </div>
   )
 
+  if (loadError) return (
+    <div className="flex h-[calc(100vh-5rem)] items-center justify-center px-4">
+      <div className="w-full max-w-md rounded-2xl border border-red-100 bg-white p-6 text-center shadow-card">
+        <p className="font-bold text-gray-900">Listings could not be loaded</p>
+        <p className="mt-2 text-sm text-gray-500">{loadError}</p>
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          className="mt-5 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-700"
+        >
+          Try again
+        </button>
+      </div>
+    </div>
+  )
+
   return (
-    <div className="flex h-[calc(100vh-64px)] md:h-screen overflow-hidden relative">
+    <div className="flex h-[calc(100vh-5rem)] flex-col overflow-hidden relative">
+
+      {/* Full-width listing toolbar */}
+      <div className="sticky top-0 z-20 mb-4 shrink-0 overflow-hidden rounded-2xl border border-brand-900/20 bg-gradient-to-r from-brand-700 via-brand-800 to-brand-950 px-3 py-3 text-white shadow-lg md:px-6">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="min-w-0 shrink-0 md:min-w-[12rem]">
+            <h2 className="text-lg font-bold tracking-tight md:text-xl">Land Listings</h2>
+            <p className="text-xs text-white/70 mt-0.5">{filteredListings.length} available properties</p>
+          </div>
+
+          <div className="ml-auto grid w-full grid-cols-1 gap-2 lg:flex lg:w-auto lg:items-center">
+            <div className="relative w-full lg:w-72">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-100 pointer-events-none" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search title or location..."
+                className="w-full rounded-xl border border-white/20 bg-white/10 py-2.5 pl-10 pr-9 text-sm text-white placeholder:text-white/60 shadow-sm transition focus:bg-white/15 focus:outline-none focus:ring-2 focus:ring-white/70"
+              />
+              {search && (
+                <button
+                  onClick={() => setSearch('')}
+                  aria-label="Clear search"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md p-1 text-white/70 transition hover:bg-white/15 hover:text-white"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 lg:flex lg:items-center">
+              <div className="relative min-w-0 lg:min-w-[10.5rem]">
+                <Tag className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-100 pointer-events-none" />
+                <select
+                  value={activeType}
+                  onChange={(e) => setActiveType(e.target.value)}
+                  className="w-full appearance-none rounded-xl border border-white/20 bg-white/95 py-2.5 pl-9 pr-8 text-sm font-semibold text-gray-700 shadow-sm transition focus:bg-white focus:outline-none focus:ring-2 focus:ring-white/70 cursor-pointer"
+                >
+                  <option value="all">All Land Types</option>
+                  <option value="Residential">Residential</option>
+                  <option value="Commercial">Commercial</option>
+                  <option value="Agricultural">Agricultural</option>
+                  <option value="Industrial">Industrial</option>
+                </select>
+                <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" />
+              </div>
+
+              <div className="relative min-w-0 lg:min-w-[10.5rem]">
+                <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-100 pointer-events-none" />
+                <select
+                  value={activeBranch}
+                  onChange={(e) => {
+                    const b = e.target.value
+                    setActiveBranch(b)
+                    setExpanded(b === 'all' ? null : b)
+                    setFlyTo(b === 'all' ? null : { branch: b })
+                    const params = new URLSearchParams(location.search)
+                    if (b !== 'all') params.set('branch', b)
+                    else params.delete('branch')
+                    navigate({ search: params.toString() ? `?${params.toString()}` : '' }, { replace: true })
+                  }}
+                  className="w-full appearance-none rounded-xl border border-white/20 bg-white/95 py-2.5 pl-9 pr-8 text-sm font-semibold text-gray-700 shadow-sm transition focus:bg-white focus:outline-none focus:ring-2 focus:ring-white/70 cursor-pointer"
+                >
+                  <option value="all">All Branches</option>
+                  {BRANCHES.map((b) => <option key={b} value={b}>{displayBranchName(b)}</option>)}
+                </select>
+                <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" />
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <div className="relative flex min-h-0 flex-1">
 
       {/* Left panel — listing accordion */}
       <div className={`flex-shrink-0 bg-gray-50 border-r border-gray-200 shadow-xl flex flex-col transition-all duration-300 z-20 ${
-        panelOpen ? 'w-80' : 'w-0 overflow-hidden'
+        panelOpen ? 'w-[min(90vw,17rem)]' : 'w-0 overflow-hidden'
       }`}>
-        {/* Gradient header */}
-        <div className="p-4 bg-gradient-to-r from-brand-700 to-brand-900 text-white flex items-center justify-between">
-          <div>
-            <h2 className="font-bold text-lg">Land Listings</h2>
-            <p className="text-xs text-white/70 mt-0.5">{filteredListings.length} available properties</p>
-          </div>
-          <button onClick={() => setPanelOpen(false)} className="p-1.5 rounded-lg hover:bg-white/20 transition text-white/80">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* Branch filter + search */}
-        <div className="p-4 border-b border-gray-200 bg-white space-y-3">
-          <div className="relative">
-            <Building2 className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-            <select
-              value={activeBranch}
-              onChange={(e) => {
-                const b = e.target.value
-                setActiveBranch(b)
-                setExpanded(b === 'all' ? null : b)
-                setFlyTo(b === 'all' ? null : { branch: b })
-                if (b !== 'all') navigate({ search: `?branch=${encodeURIComponent(b)}` }, { replace: true })
-                else navigate({ search: '' }, { replace: true })
-              }}
-              className="w-full appearance-none pl-10 pr-9 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-semibold text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:bg-white transition shadow-sm cursor-pointer"
-            >
-              <option value="all">All Branches</option>
-              {BRANCHES.map((b) => (
-                <option key={b} value={b}>{b}</option>
-              ))}
-            </select>
-            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-          </div>
-          <div className="relative">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search title or location..."
-              className="w-full pl-10 pr-9 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:bg-white transition shadow-sm"
-            />
-            {search && (
-              <button
-                onClick={() => setSearch('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-md hover:bg-gray-200 text-gray-400 transition"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-        </div>
-
         {/* Accordion list */}
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {Object.entries(grouped).length === 0 ? (
@@ -201,17 +267,20 @@ export default function MapExplore() {
               const style = branchStyle(branch)
               const isExpanded = expanded === branch || search
               return (
-                <div key={branch} className={`rounded-xl border ${style.border} overflow-hidden bg-white shadow-sm`}>
+                <div key={branch} className={`w-full rounded-xl border ${style.border} overflow-hidden bg-white shadow-sm`}>
                   <button
                     onClick={() => setExpanded(expanded === branch ? null : branch)}
                     className={`w-full flex items-center justify-between px-4 py-3 ${style.bg} ${style.hover} transition text-sm font-bold ${style.text}`}
                   >
                     <span className="flex items-center gap-2">
-                      <Building2 className="w-4 h-4" /> {branch}
+                      <span className={`inline-flex ${isExpanded ? 'icon-toggle-motion' : ''}`}>
+                        <Building2 className="w-4 h-4" />
+                      </span>
+                      {displayBranchName(branch)}
                     </span>
                     <div className="flex items-center gap-2">
                       <span className={`text-xs font-semibold ${style.badge} px-2.5 py-1 rounded-full`}>{items.length}</span>
-                      {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                      <ChevronDown className={`w-4 h-4 transition-transform duration-300 ease-out ${isExpanded ? 'rotate-180' : ''}`} />
                     </div>
                   </button>
 
@@ -230,13 +299,10 @@ export default function MapExplore() {
                           >
                             <button onClick={() => handleSelect(l)} className="w-full text-left">
                               <div className="flex gap-3 p-3">
-                                {l.photos?.[0] ? (
-                                  <img src={l.photos[0]} alt="" className="w-14 h-14 rounded-lg object-cover flex-shrink-0" />
-                                ) : (
-                                  <div className={`w-14 h-14 rounded-lg ${isActive ? 'bg-white/20' : 'bg-brand-50'} flex items-center justify-center flex-shrink-0`}>
-                                    <Home className={`w-6 h-6 ${isActive ? 'text-white' : 'text-brand-500'}`} />
-                                  </div>
-                                )}
+                                <div className={`w-14 h-14 rounded-lg ${isActive ? 'bg-white/20' : 'bg-brand-50'} flex flex-col items-center justify-center flex-shrink-0 ${isActive ? 'icon-toggle-motion' : ''}`}>
+                                  {l.zoning_classification === 'Agricultural' ? <Wheat className={`w-6 h-6 ${isActive ? 'text-white' : 'text-green-600'}`} /> : l.zoning_classification === 'Industrial' ? <Factory className={`w-6 h-6 ${isActive ? 'text-white' : 'text-gray-600'}`} /> : l.zoning_classification === 'Commercial' ? <Building2 className={`w-6 h-6 ${isActive ? 'text-white' : 'text-amber-600'}`} /> : <Home className={`w-6 h-6 ${isActive ? 'text-white' : 'text-blue-600'}`} />}
+                                  <span className={`text-[9px] font-bold ${isActive ? 'text-white' : 'text-gray-500'}`}>{l.zoning_classification || 'Land'}</span>
+                                </div>
                                 <div className="min-w-0 flex-1">
                                   <p className="font-semibold text-sm line-clamp-1 pr-6">{l.title}</p>
                                   <p className={`text-xs mt-0.5 flex items-center gap-1 ${isActive ? 'text-brand-200' : 'text-gray-400'}`}>
@@ -274,17 +340,16 @@ export default function MapExplore() {
         </div>
       </div>
 
-      {/* Toggle panel button */}
-      {!panelOpen && (
-        <button
-          onClick={() => setPanelOpen(true)}
-          className="absolute left-0 top-1/2 -translate-y-1/2 z-30 bg-brand-600 text-white px-2 py-4 rounded-r-xl shadow-lg hover:bg-brand-700 transition flex items-center gap-1"
-          title="Show listings panel"
-        >
-          <SlidersHorizontal className="w-4 h-4" />
-          <ChevronDown className="w-4 h-4 rotate-[-90deg]" />
-        </button>
-      )}
+      {/* Listings panel minimize/restore tab */}
+      <button
+        onClick={() => setPanelOpen((open) => !open)}
+        aria-label={panelOpen ? 'Minimize land listings' : 'Show land listings'}
+        title={panelOpen ? 'Minimize land listings' : 'Show land listings'}
+        style={{ left: panelOpen ? 'calc(min(90vw, 17rem) - 1rem)' : '0px' }}
+        className="absolute top-1/2 z-20 flex h-14 w-9 -translate-y-1/2 items-center justify-center rounded-r-xl bg-brand-600 text-white shadow-lg transition hover:bg-brand-700 md:z-30"
+      >
+        {panelOpen ? <ChevronLeft className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
+      </button>
 
       {/* Map fills remaining space */}
       <div className="flex-1 relative">
@@ -308,98 +373,21 @@ export default function MapExplore() {
                 </p>
               </div>
               <div className="flex items-center gap-0.5 flex-shrink-0">
-                <FavoriteButton listingId={selected.id} size={18} className="p-1" />
                 <button onClick={() => setSelected(null)} className="p-1 rounded-md hover:bg-gray-100 text-gray-400 transition">
                   <X className="w-4 h-4" />
                 </button>
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-2 mb-3">
-              <div className="bg-gray-50 rounded-lg p-2 text-center border border-gray-100 overflow-hidden">
-                <PesoIcon className="w-3.5 h-3.5 text-brand-600 mx-auto mb-0.5" />
-                <p className="text-[10px] text-gray-500">Price</p>
-                <p className="text-[10px] font-bold text-gray-900 truncate">₱{Number(selected.price).toLocaleString()}</p>
-              </div>
-              <div className="bg-gray-50 rounded-lg p-2 text-center border border-gray-100">
-                <Maximize className="w-3.5 h-3.5 text-brand-600 mx-auto mb-0.5" />
-                <p className="text-[10px] text-gray-500">Area</p>
-                <p className="text-xs font-bold text-gray-900">{Number(selected.area_sqm).toLocaleString()}m²</p>
-              </div>
-              <div className="bg-gray-50 rounded-lg p-2 text-center border border-gray-100">
-                <Tag className="w-3.5 h-3.5 text-brand-600 mx-auto mb-0.5" />
-                <p className="text-[10px] text-gray-500">Status</p>
-                <p className="text-xs font-bold text-gray-900 capitalize">{selected.status}</p>
-              </div>
-            </div>
-
-            {selected.description && (
-              <p className="text-xs text-gray-600 mb-3 line-clamp-2">{selected.description}</p>
-            )}
-
-            {/* Photo gallery — scrollable thumbnails */}
-            {selected.photos?.length > 0 && (
-              <div className="mb-3">
-                <div className="flex items-center justify-between mb-1.5">
-                  <h4 className="text-[10px] font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
-                    <ImageIcon className="w-3 h-3" /> Property Photos
-                  </h4>
-                  <span className="text-[10px] font-medium text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-full">
-                    {selected.photos.length}
-                  </span>
-                </div>
-                <div className="flex gap-1.5 overflow-x-auto pb-1.5 scrollbar-thin scrollbar-thumb-emerald-200 scrollbar-track-transparent">
-                  {selected.photos.map((url, i) => (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() => { setLightboxIndex(i); setLightboxOpen(true) }}
-                      className="relative flex-shrink-0 w-16 h-16 rounded-lg border border-gray-200 overflow-hidden group hover:border-emerald-500 transition focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    >
-                      <img src={url} alt={`Property ${i + 1}`} className="w-full h-full object-cover transition group-hover:scale-105" />
-                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition" />
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="flex flex-col gap-2">
+            <div className={`grid gap-2 ${user?.role === 'buyer' ? 'grid-cols-2' : 'grid-cols-1'}`}>
               {user?.role === 'buyer' && (
-                <div className="flex items-center justify-between gap-2 bg-gray-50 rounded-lg px-2.5 py-2 border border-gray-100">
-                  <div className="flex items-center gap-1.5">
-                    <Building2 className="w-3.5 h-3.5 text-brand-600 flex-shrink-0" />
-                    <span className="text-[10px] font-medium text-gray-600">Meet at:</span>
-                  </div>
-                  <select
-                    value={preferredBranch}
-                    onChange={(e) => setPreferredBranch(e.target.value)}
-                    className="bg-transparent text-xs font-semibold text-gray-900 focus:outline-none cursor-pointer text-right"
-                  >
-                    {BRANCHES.map((b) => (
-                      <option key={b} value={b}>{b}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              <div className="flex gap-2">
-                {user?.role === 'buyer' && (
-                  <button
-                    type="button"
-                    onClick={() => setMessageOpen(true)}
-                    className="flex-1 inline-flex items-center justify-center gap-1.5 bg-emerald-600 text-white px-3 py-2 rounded-lg hover:bg-emerald-700 transition font-semibold text-xs shadow-sm"
-                  >
-                    <MessageCircle className="w-3.5 h-3.5" /> Message
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setDetailsOpen(true)}
-                  className="flex-1 inline-flex items-center justify-center gap-1.5 bg-brand-600 text-white px-3 py-2 rounded-lg hover:bg-brand-700 transition font-semibold text-xs shadow-sm"
-                >
-                  <Eye className="w-3.5 h-3.5" /> Details
+                <button type="button" onClick={() => setMessageOpen(true)} className="w-full min-w-0 inline-flex items-center justify-center gap-1.5 bg-white text-emerald-700 border border-emerald-200 px-2 py-2.5 rounded-lg hover:bg-emerald-50 transition font-semibold text-xs shadow-sm">
+                  <MessageCircle className="w-4 h-4 flex-shrink-0" /> <span className="truncate">Message seller</span>
                 </button>
-              </div>
+              )}
+              <button type="button" onClick={() => setDetailsOpen(true)} className="w-full min-w-0 inline-flex items-center justify-center gap-1.5 bg-brand-600 text-white px-2 py-2.5 rounded-lg hover:bg-brand-700 transition font-semibold text-xs shadow-sm">
+                <Eye className="w-4 h-4 flex-shrink-0" /> <span className="truncate">View details</span>
+              </button>
             </div>
           </div>
         )}
@@ -509,8 +497,8 @@ export default function MapExplore() {
                           <Building2 className={`w-4 h-4 ${style.text}`} />
                         </div>
                         <div>
-                          <p className="text-sm font-bold text-gray-900">{branch}</p>
-                          <p className="text-xs text-gray-500">Serving {branch.replace('Main ', '')} area</p>
+                          <p className="text-sm font-bold text-gray-900">{displayBranchName(branch)}</p>
+                        <p className="text-xs text-gray-500">Serving {displayBranchName(branch.replace('Main ', ''))} area</p>
                         </div>
                       </div>
                       {nearest && (
@@ -539,6 +527,8 @@ export default function MapExplore() {
             onClose={() => setMessageOpen(false)}
           />
         )}
+      </div>
+
       </div>
 
       <LandDetailsModal

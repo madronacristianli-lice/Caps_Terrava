@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useNotifications } from '../context/NotificationContext.jsx'
 import Avatar from '../components/Avatar.jsx'
-import { LogOut, Menu, User, Bell, Building2, Banknote, LandPlot, Info } from 'lucide-react'
+import { LogOut, Menu, User, Bell, Building2, Banknote, LandPlot, MessageCircle, Info, ChevronLeft, ChevronRight } from 'lucide-react'
 
 const pageTitles = {
   '/': 'Listings',
@@ -30,6 +30,21 @@ function getPageTitle(pathname) {
   return 'Dashboard'
 }
 
+const notificationFilters = [
+  { id: 'all', label: 'All' },
+  { id: 'payments', label: 'Payments' },
+  { id: 'listing', label: 'Listing approval' },
+  { id: 'messages', label: 'Messages' },
+  { id: 'system', label: 'System' }
+]
+
+const getNotificationCategory = (notification) => {
+  if (notification.data?.category === 'message') return 'messages'
+  if (notification.type === 'transaction') return 'payments'
+  if (notification.type === 'listing') return 'listing'
+  return 'system'
+}
+
 export default function DashboardHeader({ onMenuToggle }) {
   const { user, logout } = useAuth()
   const { pathname } = useLocation()
@@ -39,6 +54,12 @@ export default function DashboardHeader({ onMenuToggle }) {
   const notifRef = useRef(null)
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
+  const [notificationFilter, setNotificationFilter] = useState('all')
+  const [notificationPage, setNotificationPage] = useState(1)
+  const notificationsPerPage = 5
+  const availableNotificationFilters = user?.role === 'buyer'
+    ? notificationFilters.filter((filter) => filter.id !== 'listing')
+    : notificationFilters
   const title = getPageTitle(pathname)
 
   useEffect(() => {
@@ -59,6 +80,23 @@ export default function DashboardHeader({ onMenuToggle }) {
     navigate('/login')
     setDropdownOpen(false)
   }
+
+  useEffect(() => {
+    setNotificationPage(1)
+    if (user?.role === 'buyer' && notificationFilter === 'listing') {
+      setNotificationFilter('all')
+    }
+  }, [notifications.length, notificationFilter])
+
+  const filteredNotifications = notificationFilter === 'all'
+    ? notifications
+    : notifications.filter((notification) => getNotificationCategory(notification) === notificationFilter)
+  const notificationPageCount = Math.max(1, Math.ceil(filteredNotifications.length / notificationsPerPage))
+  const currentNotificationPage = Math.min(notificationPage, notificationPageCount)
+  const visibleNotifications = filteredNotifications.slice(
+    (currentNotificationPage - 1) * notificationsPerPage,
+    currentNotificationPage * notificationsPerPage
+  )
 
   return (
     <header className="sticky top-0 z-30 bg-white border-b border-gray-100 shadow-sm">
@@ -107,10 +145,34 @@ export default function DashboardHeader({ onMenuToggle }) {
                     </button>
                   )}
                 </div>
-                {notifications.length === 0 ? (
-                  <p className="px-4 py-6 text-sm text-gray-500 text-center">No notifications yet</p>
+                <div className="flex gap-1 overflow-x-auto border-b border-gray-100 px-3 py-2" role="tablist" aria-label="Notification categories">
+                  {availableNotificationFilters.map((filter) => {
+                    const count = filter.id === 'all'
+                      ? notifications.length
+                      : notifications.filter((notification) => getNotificationCategory(notification) === filter.id).length
+                    return (
+                      <button
+                        key={filter.id}
+                        type="button"
+                        role="tab"
+                        aria-selected={notificationFilter === filter.id}
+                        onClick={() => setNotificationFilter(filter.id)}
+                        className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold transition ${
+                          notificationFilter === filter.id
+                            ? 'bg-brand-100 text-brand-800'
+                            : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+                        }`}
+                      >
+                        {filter.label}
+                        {count > 0 && <span className="ml-1 opacity-70">{count}</span>}
+                      </button>
+                    )
+                  })}
+                </div>
+                {filteredNotifications.length === 0 ? (
+                  <p className="px-4 py-6 text-sm text-gray-500 text-center">No {notificationFilter === 'all' ? '' : `${notificationFilter} `}notifications yet</p>
                 ) : (
-                  notifications.map((n) => (
+                  visibleNotifications.map((n) => (
                     <button
                       key={n.id}
                       onClick={() => {
@@ -122,11 +184,14 @@ export default function DashboardHeader({ onMenuToggle }) {
                     >
                       <div className="flex items-start gap-3">
                         {(() => {
-                          const { Icon, bg } = n.type === 'transaction'
+                          const category = getNotificationCategory(n)
+                          const { Icon, bg } = category === 'payments'
                             ? { Icon: Banknote, bg: 'bg-emerald-100 text-emerald-600' }
-                            : n.type === 'listing'
+                            : category === 'listing'
                               ? { Icon: LandPlot, bg: 'bg-blue-100 text-blue-600' }
-                              : { Icon: Info, bg: 'bg-gray-100 text-gray-500' }
+                              : category === 'messages'
+                                ? { Icon: MessageCircle, bg: 'bg-violet-100 text-violet-600' }
+                                : { Icon: Info, bg: 'bg-gray-100 text-gray-500' }
                           return (
                             <div className={`mt-0.5 p-1.5 rounded-lg flex-shrink-0 ${bg}`}>
                               <Icon className="w-4 h-4" />
@@ -151,9 +216,45 @@ export default function DashboardHeader({ onMenuToggle }) {
                             })()}
                           </p>
                         </div>
+                        {!n.is_read && (
+                          <span className="mt-1 inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700" title="Unread notification">
+                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
+                            Unread
+                          </span>
+                        )}
                       </div>
                     </button>
                   ))
+                )}
+                {filteredNotifications.length > notificationsPerPage && (
+                  <div className="flex items-center justify-between gap-2 border-t border-gray-100 bg-gray-50/80 px-3 py-2">
+                    <p className="text-[10px] text-gray-500">
+                      {((currentNotificationPage - 1) * notificationsPerPage) + 1}-{Math.min(currentNotificationPage * notificationsPerPage, filteredNotifications.length)} of {filteredNotifications.length}
+                    </p>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setNotificationPage((page) => Math.max(1, page - 1))}
+                        disabled={currentNotificationPage <= 1}
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 transition hover:border-brand-300 hover:text-brand-700 disabled:cursor-not-allowed disabled:opacity-40"
+                        aria-label="Previous notifications"
+                      >
+                        <ChevronLeft className="h-3.5 w-3.5" />
+                      </button>
+                      <span className="min-w-[3.5rem] text-center text-[10px] font-bold text-gray-600">
+                        {currentNotificationPage} / {notificationPageCount}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setNotificationPage((page) => Math.min(notificationPageCount, page + 1))}
+                        disabled={currentNotificationPage >= notificationPageCount}
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 transition hover:border-brand-300 hover:text-brand-700 disabled:cursor-not-allowed disabled:opacity-40"
+                        aria-label="Next notifications"
+                      >
+                        <ChevronRight className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
                 )}
               </div>
             )}

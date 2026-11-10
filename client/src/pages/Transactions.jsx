@@ -8,8 +8,9 @@ import EmptyState from '../components/EmptyState.jsx'
 import Avatar from '../components/Avatar.jsx'
 import {
   ShieldCheck, Link2, ExternalLink, Search, X, CreditCard, Receipt, TrendingUp, Clock, CheckCircle, XCircle, Home, User,
-  Eye, MapPin, Maximize, Phone, Mail, Landmark, Calendar, Hash, FileText, UserCheck, Building2, Tag, Banknote, ArrowRight
+  Eye, MapPin, Maximize, Phone, Mail, Landmark, Calendar, Hash, FileText, UserCheck, Building2, Tag, Banknote
 } from 'lucide-react'
+import { displayBranchName } from '../utils/branches.js'
 
 export default function Transactions() {
   const { user } = useAuth()
@@ -18,6 +19,8 @@ export default function Transactions() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [detailTransaction, setDetailTransaction] = useState(null)
+  const [transactionPage, setTransactionPage] = useState(1)
+  const transactionsPerPage = 10
 
   const openDetail = (t) => setDetailTransaction(t)
   const closeDetail = () => setDetailTransaction(null)
@@ -64,6 +67,14 @@ export default function Transactions() {
       (t.payment_method || '').toLowerCase().includes(q)
     )
   })
+  const totalTransactionPages = Math.max(1, Math.ceil(filteredTransactions.length / transactionsPerPage))
+  const paginatedTransactions = filteredTransactions.slice(
+    (transactionPage - 1) * transactionsPerPage,
+    transactionPage * transactionsPerPage
+  )
+  useEffect(() => {
+    setTransactionPage((page) => Math.min(page, totalTransactionPages))
+  }, [totalTransactionPages])
 
   const totalAmount = transactions.reduce((sum, t) => sum + Number(t.amount || 0), 0)
   const verifiedAmount = transactions.filter((t) => t.status === 'verified').reduce((sum, t) => sum + Number(t.amount || 0), 0)
@@ -89,6 +100,8 @@ export default function Transactions() {
             <p className="text-white/70 mt-0.5 text-sm">
               {user?.role === 'admin'
                 ? 'All payment records are backed by the blockchain ledger.'
+                : user?.role === 'seller'
+                  ? 'Payment records for your assigned branch.'
                 : 'Payment records for your listings and purchases.'}
             </p>
           </div>
@@ -202,7 +215,7 @@ export default function Transactions() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
-                    {filteredTransactions.map((t) => {
+                    {paginatedTransactions.map((t) => {
                       const { bg, icon: StatusIcon, label } = statusBadge(t.status)
                       return (
                         <tr key={t.id} className="hover:bg-brand-50/30 transition">
@@ -269,6 +282,26 @@ export default function Transactions() {
                     })}
                   </tbody>
                 </table>
+              </div>
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-gray-100 bg-gray-50 px-4 py-3">
+                <p className="text-xs text-gray-500">
+                  Showing {((transactionPage - 1) * transactionsPerPage) + 1}–{Math.min(transactionPage * transactionsPerPage, filteredTransactions.length)} of {filteredTransactions.length} transactions
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTransactionPage((page) => Math.max(1, page - 1))}
+                    disabled={transactionPage === 1}
+                    className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+                  >Previous</button>
+                  <span className="min-w-16 text-center text-xs font-semibold text-gray-600">Page {transactionPage} of {totalTransactionPages}</span>
+                  <button
+                    type="button"
+                    onClick={() => setTransactionPage((page) => Math.min(totalTransactionPages, page + 1))}
+                    disabled={transactionPage === totalTransactionPages}
+                    className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+                  >Next</button>
+                </div>
               </div>
             </div>
           )}
@@ -357,7 +390,7 @@ export default function Transactions() {
                       </div>
                       <div>
                         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Branch Paid</p>
-                        <p className="text-sm font-bold text-gray-900 mt-0.5">{branch}</p>
+                        <p className="text-sm font-bold text-gray-900 mt-0.5">{displayBranchName(branch)}</p>
                       </div>
                     </div>
                   </div>
@@ -463,49 +496,15 @@ export default function Transactions() {
                   <Link2 className="w-4 h-4 text-emerald-400" />
                   <p className="text-xs font-bold text-emerald-400 uppercase tracking-wider">Blockchain Ledger</p>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4">
                   <div className="bg-white/5 rounded-xl p-4 border border-white/10">
                     <p className="text-xs text-slate-400 uppercase tracking-wider">Block Hash</p>
                     <p className="text-xs font-mono text-white mt-2 break-all">{detailTransaction.block?.hash || '—'}</p>
-                  </div>
-                  <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-                    <p className="text-xs text-slate-400 uppercase tracking-wider">Ethereum TX</p>
-                    {detailTransaction.eth_tx_hash ? (
-                      <a
-                        href={`https://sepolia.etherscan.io/tx/${detailTransaction.eth_tx_hash}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 font-mono mt-2 hover:underline"
-                      >
-                        {detailTransaction.eth_tx_hash} <ExternalLink className="w-3 h-3" />
-                      </a>
-                    ) : (
-                      <p className="text-xs text-slate-400 mt-2">—</p>
-                    )}
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Footer */}
-            <div className="border-t border-gray-100 p-5 flex items-center justify-end gap-3 bg-gray-50 rounded-b-2xl">
-              <button
-                onClick={closeDetail}
-                className="px-5 py-2.5 text-sm font-semibold text-slate-600 hover:text-slate-800 rounded-xl hover:bg-slate-200 transition"
-              >
-                Close
-              </button>
-              {detailTransaction.eth_tx_hash && (
-                <a
-                  href={`https://sepolia.etherscan.io/tx/${detailTransaction.eth_tx_hash}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-xl transition"
-                >
-                  View on Etherscan <ArrowRight className="w-4 h-4" />
-                </a>
-              )}
-            </div>
           </div>
         </div>
       )}

@@ -48,8 +48,17 @@ export const NotificationProvider = ({ children }) => {
 
   useEffect(() => {
     fetchNotifications()
-    const interval = setInterval(fetchNotifications, 30000)
-    return () => clearInterval(interval)
+    const interval = setInterval(fetchNotifications, 10000)
+    const refreshOnFocus = () => {
+      if (document.visibilityState === 'visible') fetchNotifications()
+    }
+    window.addEventListener('focus', refreshOnFocus)
+    document.addEventListener('visibilitychange', refreshOnFocus)
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('focus', refreshOnFocus)
+      document.removeEventListener('visibilitychange', refreshOnFocus)
+    }
   }, [fetchNotifications])
 
   return (

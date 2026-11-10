@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Building2, Eye, EyeOff, Lock, Save, ShieldCheck, UserPlus, Users, X } from 'lucide-react'
 import api from '../api/api.js'
 import { useToast } from '../context/ToastContext.jsx'
+import { displayBranchName } from '../utils/branches.js'
 
 const BRANCHES = ['Main Tagum', 'Panabo', 'Sto. Tomas', 'Davao City', 'Mati City', 'Digos City']
 
@@ -115,7 +116,7 @@ export default function AdminSettingsModal({ user, onClose, onUserUpdated, onSel
           <button onClick={onClose} className="rounded-lg p-2 text-gray-400 transition hover:bg-gray-100 hover:text-gray-600" aria-label="Close settings"><X className="h-5 w-5" /></button>
         </div>
 
-        <div className="flex gap-2 overflow-x-auto border-b border-gray-100 px-5 pt-3">
+        <div className="relative z-20 flex flex-shrink-0 gap-2 overflow-x-auto border-b border-gray-100 bg-white px-5 pt-3">
           {[['profile', 'Profile', Users], ['security', 'Password', Lock], ['seller', 'Add Seller', UserPlus]].map(([key, label, Icon]) => (
             <button key={key} onClick={() => setTab(key)} className={`inline-flex items-center gap-2 whitespace-nowrap border-b-2 px-3 py-3 text-sm font-bold transition ${tab === key ? 'border-emerald-600 text-emerald-700' : 'border-transparent text-gray-500 hover:text-gray-800'}`}><Icon className="h-4 w-4" />{label}</button>
           ))}

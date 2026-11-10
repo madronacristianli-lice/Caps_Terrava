@@ -53,13 +53,20 @@ export default function App() {
         }>
           <Route path="branches" element={<AdminBranches />} />
           <Route path="verifications" element={<AdminVerifications />} />
-          <Route path="users" element={<AdminUsers />} />
+          {/* Keep User Directory on the canonical admin dashboard UI. */}
+          <Route path="users" element={<Navigate to="/admin" state={{ tab: 'users' }} replace />} />
           <Route path="sales" element={<AdminSales />} />
           <Route path="blockchain" element={<BlockchainExplorer />} />
           <Route path="*" element={<Navigate to="/admin" replace />} />
         </Route>
       </Routes>
     )
+  }
+
+  // Keep admin-only listing edits inside the admin shell instead of using the
+  // seller sidebar/header that wraps the shared edit route.
+  if (user?.role === 'admin' && pathname.startsWith('/edit-listing/')) {
+    return <AdminLayout><EditListing /></AdminLayout>
   }
 
   if (!user) {
@@ -89,7 +96,9 @@ export default function App() {
         <DashboardHeader onMenuToggle={() => setMobileOpen((v) => !v)} />
         <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-auto">
           <Routes>
-          <Route path="/" element={user?.role === 'admin' ? <Navigate to="/admin" replace /> : <Home />} />
+          {/* Keep the buyer workspace on the original Listings page. The
+              public landing page is still shown at / when logged out. */}
+          <Route path="/" element={<Home />} />
           <Route path="/listing/:id" element={<ListingDetail />} />
           <Route path="/create-listing" element={
             <ProtectedRoute roles={['seller', 'admin']}>

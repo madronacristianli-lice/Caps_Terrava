@@ -1,16 +1,17 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { MapContainer, TileLayer, Polygon, Popup, Marker, CircleMarker, Polyline, LayersControl, useMap, useMapEvents } from 'react-leaflet'
 import L from 'leaflet'
-import { Home, Building2, Wheat, Factory, MapPinned } from 'lucide-react'
+import { Home, Building2, Wheat, Factory, MapPinned, ChevronRight } from 'lucide-react'
 import { useAuth } from '../context/AuthContext.jsx'
 import { BRANCH_COORDINATES, BRANCH_ZOOM } from '../utils/branches.js'
+import { DEFAULT_BOUNDARY_POINT_COLOR, DEFAULT_BOUNDARY_POINT_SIZE } from '../utils/mapColors.js'
 import 'leaflet/dist/leaflet.css'
 
 const ZONING_STYLES = {
   Residential: { icon: Home, color: '#2563eb', bg: '#dbeafe' },
   Commercial: { icon: Building2, color: '#d97706', bg: '#fef3c7' },
   Agricultural: { icon: Wheat, color: '#16a34a', bg: '#dcfce7' },
-  Industrial: { icon: Factory, color: '#6b7280', bg: '#f3f4f6' },
+  Industrial: { icon: Factory, color: '#7c3aed', bg: '#ede9fe' },
 }
 
 function ZoningBadge({ classification, showIcon = true }) {
@@ -36,14 +37,14 @@ function ZoningIconCircle({ classification }) {
   const Icon = style.icon
   return (
     <div style={{
-      position: 'absolute', top: 8, left: 8, zIndex: 2,
-      width: 34, height: 34, borderRadius: '50%',
+      position: 'absolute', top: -14, left: -14, zIndex: 3,
+      width: 48, height: 48, borderRadius: '50%',
       background: style.bg, color: style.color,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      boxShadow: '0 2px 8px rgba(0,0,0,0.25)',
-      border: '2px solid #fff',
+      boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+      border: '3px solid #fff',
     }}>
-      <Icon size={18} />
+      <Icon size={25} />
     </div>
   )
 }
@@ -55,12 +56,24 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 })
 
-const defaultCenter = [7.336, 125.684]
+// Keep the neutral map view aligned with the main branch instead of the old
+// Tagum/Panabo mixed coordinate that was previously used here.
+const defaultCenter = BRANCH_COORDINATES['Main Tagum']
+// Keep every map focused on Mindanao and its immediate coastal area.
+// The strict bounds prevent panning out to the rest of the Philippines or
+// accidentally drifting to another country while retaining all Terrava branches.
+const MINDANAO_BOUNDS = [[4.5, 119.0], [10.8, 126.9]]
 
 function getCentroid(coords) {
   if (!coords || coords.length === 0) return null
   const sum = coords.reduce((acc, c) => [acc[0] + c[0], acc[1] + c[1]], [0, 0])
   return [sum[1] / coords.length, sum[0] / coords.length]
+}
+
+function getLatLngCentroid(points) {
+  if (!points || points.length === 0) return null
+  const sum = points.reduce((acc, [lat, lng]) => [acc[0] + lat, acc[1] + lng], [0, 0])
+  return [sum[0] / points.length, sum[1] / points.length]
 }
 
 function formatPeso(amount) {
@@ -80,25 +93,25 @@ function canViewFinancing(user, listing) {
 
 
 function createPhotoIcon(listing, isActive) {
-  const photo = listing.photos?.[0]
   const size = isActive ? 56 : 46
-  const borderColor = isActive ? '#2563eb' : '#059669'
+  const style = ZONING_STYLES[listing.zoning_classification] || { icon: MapPinned, color: '#6b7280', bg: '#f3f4f6' }
+  const borderColor = isActive ? '#1d4ed8' : style.color
+  const iconPaths = {
+    Residential: '<path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.5V21h13V9.5M9 21v-6h6v6"/>',
+    Commercial: '<path d="M4 21V5h10v16M14 9h6v12M7 8h4M7 12h4M7 16h4M17 13h1M17 17h1"/>',
+    Agricultural: '<path d="M12 21V8M12 12C8 12 5 9 5 5c4 0 7 3 7 7M12 16c4 0 7-3 7-7-4 0-7 3-7 7"/>',
+    Industrial: '<path d="M4 21V9l6 4V9l6 4V5h4v16M2 21h20M7 17h2M12 17h2M17 17h2"/>',
+  }
+  const iconSvg = `<svg width="${isActive ? 30 : 24}" height="${isActive ? 30 : 24}" viewBox="0 0 24 24" fill="none" stroke="${style.color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${iconPaths[listing.zoning_classification] || iconPaths.Residential}</svg>`
 
-  const inner = photo
-    ? `<div style="
+  const inner = `<div style="
         width:${size}px;height:${size}px;border-radius:50%;
         border:3px solid ${borderColor};
-        box-shadow:0 2px 6px rgba(0,0,0,0.4);
-        background:#fff url('${photo}') center/cover no-repeat;
-      "></div>`
-    : `<div style="
-        width:${size}px;height:${size}px;border-radius:50%;
-        border:3px solid ${borderColor};
-        box-shadow:0 2px 6px rgba(0,0,0,0.4);
-        background:#10b981;
+        box-shadow:0 2px 6px rgba(0,0,0,0.3);
+        background:${style.bg};
         display:flex;align-items:center;justify-content:center;
-        color:#fff;font-size:18px;
-      ">📍</div>`
+        color:${style.color};font-size:${isActive ? 27 : 22}px;font-weight:800;
+      ">${iconSvg}</div>`
 
   const pointer = `<div style="
       width:0;height:0;margin:0 auto;
@@ -109,7 +122,7 @@ function createPhotoIcon(listing, isActive) {
 
   return L.divIcon({
     className: 'listing-photo-marker',
-    html: `<div style="display:flex;flex-direction:column;align-items:center;">${inner}${pointer}</div>`,
+    html: `<div class="listing-photo-marker-content" style="display:flex;flex-direction:column;align-items:center;">${inner}${pointer}</div>`,
     iconSize: [size, size + 9],
     iconAnchor: [size / 2, size + 9],
     popupAnchor: [0, -(size + 9)],
@@ -179,6 +192,50 @@ function FitBounds({ listings }) {
   return null
 }
 
+function FitBoundary({ points }) {
+  const map = useMap()
+
+  useEffect(() => {
+    if (!points || points.length === 0) return
+
+    if (points.length === 1) {
+      map.flyTo(points[0], 17, { duration: 0.8 })
+      return
+    }
+
+    map.fitBounds(L.latLngBounds(points), {
+      padding: [24, 24],
+      maxZoom: 17,
+      animate: true,
+      duration: 0.8,
+    })
+  }, [map, points])
+
+  return null
+}
+
+function MapResizeHandler() {
+  const map = useMap()
+
+  useEffect(() => {
+    const container = map.getContainer()
+    let frame = 0
+    const refreshSize = () => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => map.invalidateSize({ animate: false, pan: false }))
+    }
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(refreshSize) : null
+    observer?.observe(container)
+    refreshSize()
+    return () => {
+      cancelAnimationFrame(frame)
+      observer?.disconnect()
+    }
+  }, [map])
+
+  return null
+}
+
 function BoundaryPointPicker({ onAddPoint }) {
   useMapEvents({
     click: (event) => onAddPoint?.([event.latlng.lat, event.latlng.lng])
@@ -186,7 +243,23 @@ function BoundaryPointPicker({ onAddPoint }) {
   return null
 }
 
-function DraftBoundary({ points }) {
+function MapStyleToggle({ showAttribution = true, initialSatellite = true }) {
+  const [satellite, setSatellite] = useState(initialSatellite)
+  const toggle = () => setSatellite((current) => !current)
+  return (
+    <>
+      <TileLayer
+        attribution={showAttribution ? (satellite ? 'Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community' : '&copy; OpenStreetMap contributors') : ''}
+        url={satellite ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}' : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'}
+      />
+      <button type="button" onClick={toggle} title="Switch map style" aria-label={`Switch to ${satellite ? 'standard' : 'satellite'} map`} style={{ position: 'absolute', top: 12, right: 12, zIndex: 1000, border: '1px solid rgba(15,23,42,.15)', borderRadius: 10, background: 'rgba(255,255,255,.95)', color: '#064e3b', padding: '9px 12px', fontSize: 12, fontWeight: 700, boxShadow: '0 2px 8px rgba(0,0,0,.18)', cursor: 'pointer' }}>
+        {satellite ? 'Satellite' : 'Map'}
+      </button>
+    </>
+  )
+}
+
+function DraftBoundary({ points, pointColors = [], pointSizes = [] }) {
   if (!points?.length) return null
 
   return (
@@ -196,11 +269,15 @@ function DraftBoundary({ points }) {
       ) : (
         <Polyline positions={points} pathOptions={{ color: '#059669', weight: 3, dashArray: '6 6' }} />
       )}
-      {points.map((point, index) => (
-        <CircleMarker key={`${point[0]}-${point[1]}-${index}`} center={point} radius={7} pathOptions={{ color: '#047857', fillColor: '#ffffff', fillOpacity: 1, weight: 3 }}>
-          <Popup>Boundary point {index + 1}</Popup>
-        </CircleMarker>
-      ))}
+      {points.map((point, index) => {
+        const color = pointColors[index] || DEFAULT_BOUNDARY_POINT_COLOR
+        const radius = Number(pointSizes[index]) || DEFAULT_BOUNDARY_POINT_SIZE
+        return (
+          <CircleMarker key={`${point[0]}-${point[1]}-${index}`} center={point} radius={radius} pathOptions={{ color, fillColor: '#ffffff', fillOpacity: 1, weight: 3 }}>
+            <Popup>Boundary point {index + 1}</Popup>
+          </CircleMarker>
+        )
+      })}
     </>
   )
 }
@@ -209,27 +286,27 @@ function AdminPopupActions({ listing, actions }) {
   if (!actions) return null
   const { onVerify, onEdit, onArchive } = actions
   return (
-    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10, paddingTop: 10, borderTop: '1px solid #e5e7eb' }}>
+    <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 0, paddingTop: 0 }}>
       {onVerify && !listing.is_verified && (
         <button
           onClick={() => onVerify(listing)}
-          style={{ fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 8px', borderRadius: 6, background: '#059669', color: '#fff', border: 'none', cursor: 'pointer' }}
+          style={{ width: 70, justifyContent: 'center', fontSize: 10, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 8px', borderRadius: 7, background: '#059669', color: '#fff', border: 'none', cursor: 'pointer' }}
         >
-          Verify
+          Confirm
         </button>
       )}
       {onEdit && (
         <button
           onClick={() => onEdit(listing)}
-          style={{ fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 8px', borderRadius: 6, background: '#ecfdf5', color: '#059669', border: '1px solid #a7f3d0', cursor: 'pointer' }}
+          style={{ width: 70, justifyContent: 'center', fontSize: 10, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 8px', borderRadius: 7, background: '#ecfdf5', color: '#047857', border: '1px solid #86efac', cursor: 'pointer' }}
         >
           Edit
         </button>
       )}
-      {onArchive && (
+      {onArchive && listing.is_verified && (
         <button
           onClick={() => onArchive(listing)}
-          style={{ fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 8px', borderRadius: 6, background: listing.archived ? '#ecfdf5' : '#f3f4f6', color: listing.archived ? '#059669' : '#374151', border: listing.archived ? '1px solid #a7f3d0' : '1px solid #d1d5db', cursor: 'pointer' }}
+          style={{ width: 70, justifyContent: 'center', fontSize: 10, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 8px', borderRadius: 7, background: listing.archived ? '#ecfdf5' : '#f3f4f6', color: listing.archived ? '#059669' : '#374151', border: listing.archived ? '1px solid #a7f3d0' : '1px solid #d1d5db', cursor: 'pointer' }}
         >
           {listing.archived ? 'Restore' : 'Archive'}
         </button>
@@ -240,6 +317,7 @@ function AdminPopupActions({ listing, actions }) {
 
 function ActivePolygon({ listing, isActive, onSelect, adminActions }) {
   const polygonRef = useRef(null)
+  const [photoIndex, setPhotoIndex] = useState(0)
   const { user } = useAuth()
   const showFinancing = canViewFinancing(user, listing)
 
@@ -258,28 +336,39 @@ function ActivePolygon({ listing, isActive, onSelect, adminActions }) {
     <Popup>
       <div style={{ minWidth: 180 }}>
         {listing.photos?.[0] && (
-          <div style={{ position: 'relative', marginBottom: 8, borderRadius: 8, overflow: 'hidden', height: 100 }}>
-            <img
-              src={listing.photos[0]}
-              alt=""
-              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-            />
+          <div style={{ position: 'relative', margin: '0 4px 12px', borderRadius: 10, overflow: 'visible', height: 100, border: '1px solid #d1d5db', background: '#f8fafc' }}>
+            <img src={listing.photos[photoIndex % listing.photos.length]} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 10 }} />
             <ZoningIconCircle classification={listing.zoning_classification} />
             {listing.photos.length > 1 && (
-              <span style={{ position: 'absolute', bottom: 4, right: 4, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 11, padding: '2px 6px', borderRadius: 4 }}>
-                +{listing.photos.length - 1} more
-              </span>
+              <button type="button" onClick={() => setPhotoIndex((index) => (index + 1) % listing.photos.length)} title="Next photo" aria-label="Next photo" style={{ position: 'absolute', bottom: 8, right: 8, width: 22, minWidth: 22, height: 22, minHeight: 22, padding: 0, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1, background: '#047857', color: '#fff', border: '2px solid #fff', borderRadius: '50%', cursor: 'pointer', boxShadow: '0 2px 6px rgba(0,0,0,.3)' }}>
+                <ChevronRight size={13} />
+              </button>
             )}
           </div>
         )}
-        <p style={{ fontWeight: 700, marginBottom: 4 }}>{listing.title}</p>
-        <p style={{ display: 'flex', alignItems: 'center', fontSize: 13, color: '#059669', fontWeight: 600 }}>
-          ₱{Number(listing.price).toLocaleString()}
-          <ZoningBadge classification={listing.zoning_classification} showIcon={false} />
-        </p>
-        <p style={{ fontSize: 12, color: '#6b7280' }}>{listing.area_sqm} sqm</p>
+        <p style={{ fontWeight: 800, fontSize: 16, lineHeight: 1.25, marginBottom: 8, color: '#111827' }}>{listing.title}</p>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+          <p style={{ fontSize: 15, color: '#059669', fontWeight: 800, margin: 0 }}>₱{Number(listing.price).toLocaleString()}</p>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: listing.status === 'available' ? '#059669' : listing.status === 'sold' ? '#2563eb' : '#d97706', textTransform: 'capitalize' }}>{listing.status}</span>
+            <ZoningBadge classification={listing.zoning_classification} showIcon={false} />
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 6 }}>
+          <p style={{ fontSize: 15, color: '#374151', fontWeight: 800, margin: 0 }}>{Number(listing.area_sqm).toLocaleString()} sqm</p>
+        </div>
         {listing.location_text && (
-          <p style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>{listing.location_text}</p>
+          <p style={{ fontSize: 12, color: '#6b7280', marginTop: 0 }}>{listing.location_text}</p>
+        )}
+        {listing.description && (
+          <p style={{ fontSize: 12, color: '#4b5563', lineHeight: 1.35, margin: '6px 0 0', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+            {listing.description}
+          </p>
+        )}
+        {adminActions && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+            <AdminPopupActions listing={listing} actions={adminActions} />
+          </div>
         )}
         {showFinancing && listing.monthly_payment_amount && (
           <div style={{ fontSize: 11, color: '#374151', marginTop: 6, padding: '6px 8px', background: '#f3f4f6', borderRadius: 6 }}>
@@ -293,17 +382,11 @@ function ActivePolygon({ listing, isActive, onSelect, adminActions }) {
             ) : null}
           </div>
         )}
-        <p style={{ fontSize: 11, marginTop: 6, fontWeight: 600,
-          color: listing.status === 'available' ? '#059669' : listing.status === 'sold' ? '#2563eb' : '#d97706',
-          textTransform: 'capitalize' }}>
-          {listing.status}
-          {listing.installmentAccounts?.[0]?.status && (
-            <span style={{ marginLeft: 6, color: '#6b7280', fontWeight: 500 }}>
-              ({listing.installmentAccounts[0].status.replace(/_/g, ' ')})
-            </span>
-          )}
-        </p>
-        <AdminPopupActions listing={listing} actions={adminActions} />
+        {listing.installmentAccounts?.[0]?.status && (
+          <p style={{ fontSize: 11, marginTop: 6, color: '#6b7280', fontWeight: 500 }}>
+            Installment: {listing.installmentAccounts[0].status.replace(/_/g, ' ')}
+          </p>
+        )}
       </div>
     </Popup>
   )
@@ -321,6 +404,7 @@ function ActivePolygon({ listing, isActive, onSelect, adminActions }) {
         }}
         eventHandlers={{
           click: () => onSelect?.(listing),
+          dblclick: () => onSelect?.(listing),
         }}
       >
         {popupContent}
@@ -329,7 +413,10 @@ function ActivePolygon({ listing, isActive, onSelect, adminActions }) {
         <Marker
           position={center}
           icon={createPhotoIcon(listing, isActive)}
-          eventHandlers={{ click: () => onSelect?.(listing) }}
+          eventHandlers={{
+            click: () => onSelect?.(listing),
+            dblclick: () => onSelect?.(listing),
+          }}
         >
           {popupContent}
         </Marker>
@@ -369,6 +456,7 @@ function PhotoGeotagMarkers({ listing }) {
 
 function FallbackMarker({ listing, isActive, onSelect, adminActions }) {
   const markerRef = useRef(null)
+  const [photoIndex, setPhotoIndex] = useState(0)
   const { user } = useAuth()
   const showFinancing = canViewFinancing(user, listing)
 
@@ -390,31 +478,48 @@ function FallbackMarker({ listing, isActive, onSelect, adminActions }) {
       ref={markerRef}
       position={[lat, lng]}
       icon={createPhotoIcon(listing, isActive)}
-      eventHandlers={{ click: () => onSelect?.(listing) }}
+      eventHandlers={{
+        click: () => onSelect?.(listing),
+        dblclick: () => onSelect?.(listing),
+      }}
     >
       <Popup>
         <div style={{ minWidth: 180 }}>
           {listing.photos?.[0] && (
-            <div style={{ position: 'relative', marginBottom: 8, borderRadius: 8, overflow: 'hidden', height: 100 }}>
-              <img
-                src={listing.photos[0]}
-                alt=""
-                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-              />
+            <div style={{ position: 'relative', margin: '0 4px 12px', borderRadius: 10, overflow: 'visible', height: 100, border: '1px solid #d1d5db', background: '#f8fafc' }}>
+              <img src={listing.photos[photoIndex % listing.photos.length]} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 10 }} />
               <ZoningIconCircle classification={listing.zoning_classification} />
               {listing.photos.length > 1 && (
-                <span style={{ position: 'absolute', bottom: 4, right: 4, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 11, padding: '2px 6px', borderRadius: 4 }}>
-                  +{listing.photos.length - 1} more
-                </span>
+                <button type="button" onClick={() => setPhotoIndex((index) => (index + 1) % listing.photos.length)} title="Next photo" aria-label="Next photo" style={{ position: 'absolute', bottom: 8, right: 8, width: 22, minWidth: 22, height: 22, minHeight: 22, padding: 0, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1, background: '#047857', color: '#fff', border: '2px solid #fff', borderRadius: '50%', cursor: 'pointer', boxShadow: '0 2px 6px rgba(0,0,0,.3)' }}>
+                  <ChevronRight size={13} />
+                </button>
               )}
             </div>
           )}
-          <p style={{ fontWeight: 700, marginBottom: 4 }}>{listing.title}</p>
-          <p style={{ display: 'flex', alignItems: 'center', fontSize: 13, color: '#059669', fontWeight: 600 }}>
-            ₱{Number(listing.price).toLocaleString()}
-            <ZoningBadge classification={listing.zoning_classification} showIcon={false} />
-          </p>
-          <p style={{ fontSize: 12, color: '#6b7280' }}>{listing.area_sqm} sqm</p>
+          <p style={{ fontWeight: 800, fontSize: 16, lineHeight: 1.25, marginBottom: 8, color: '#111827' }}>{listing.title}</p>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+            <p style={{ fontSize: 15, color: '#059669', fontWeight: 800, margin: 0 }}>₱{Number(listing.price).toLocaleString()}</p>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: listing.status === 'available' ? '#059669' : listing.status === 'sold' ? '#2563eb' : '#d97706', textTransform: 'capitalize' }}>{listing.status}</span>
+              <ZoningBadge classification={listing.zoning_classification} showIcon={false} />
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 6 }}>
+            <p style={{ fontSize: 15, color: '#374151', fontWeight: 800, margin: 0 }}>{Number(listing.area_sqm).toLocaleString()} sqm</p>
+          </div>
+          {listing.location_text && (
+            <p style={{ fontSize: 12, color: '#6b7280', marginTop: 0 }}>{listing.location_text}</p>
+          )}
+          {listing.description && (
+            <p style={{ fontSize: 12, color: '#4b5563', lineHeight: 1.35, margin: '6px 0 0', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+              {listing.description}
+            </p>
+          )}
+          {adminActions && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+              <AdminPopupActions listing={listing} actions={adminActions} />
+            </div>
+          )}
           {showFinancing && listing.monthly_payment_amount && (
             <div style={{ fontSize: 11, color: '#374151', marginTop: 6, padding: '6px 8px', background: '#f3f4f6', borderRadius: 6 }}>
               <div style={{ fontWeight: 600, marginBottom: 2 }}>Payment Terms</div>
@@ -427,17 +532,11 @@ function FallbackMarker({ listing, isActive, onSelect, adminActions }) {
               ) : null}
             </div>
           )}
-          <p style={{ fontSize: 11, marginTop: 6, fontWeight: 600,
-            color: listing.status === 'available' ? '#059669' : listing.status === 'sold' ? '#2563eb' : '#d97706',
-            textTransform: 'capitalize' }}>
-            {listing.status}
-            {listing.installmentAccounts?.[0]?.status && (
-              <span style={{ marginLeft: 6, color: '#6b7280', fontWeight: 500 }}>
-                ({listing.installmentAccounts[0].status.replace(/_/g, ' ')})
-              </span>
-            )}
-          </p>
-          <AdminPopupActions listing={listing} actions={adminActions} />
+          {listing.installmentAccounts?.[0]?.status && (
+            <p style={{ fontSize: 11, marginTop: 6, color: '#6b7280', fontWeight: 500 }}>
+              Installment: {listing.installmentAccounts[0].status.replace(/_/g, ' ')}
+            </p>
+          )}
         </div>
       </Popup>
     </Marker>
@@ -456,12 +555,16 @@ export default function MapView({
   zoomControl = true,
   doubleClickZoom = true,
   boundaryPoints = [],
+  boundaryPointColors = [],
+  boundaryPointSizes = [],
   onAddBoundaryPoint = null,
   fitBounds = false,
   adminActions = null,
   containerClassName = null,
   showLayersControl = true,
-  showAttribution = true,
+  showAttribution = false,
+  fitBoundary = false,
+  initialSatellite = true,
 }) {
   const selectListingRef = useRef(onSelectListing)
   useEffect(() => { selectListingRef.current = onSelectListing }, [onSelectListing])
@@ -473,45 +576,42 @@ export default function MapView({
   const display = singleListing ? [singleListing] : listings || []
 
   const firstCoords = display.find((l) => l.polygon_geojson?.coordinates?.[0])?.polygon_geojson?.coordinates?.[0]
-  const center = getCentroid(firstCoords) || defaultCenter
+  const center = getCentroid(firstCoords) || getLatLngCentroid(boundaryPoints) || defaultCenter
+  const initialZoom = boundaryPoints.length > 0 ? 17 : 14
 
   return (
     <div style={{ height }} className={containerClassName || 'rounded-lg overflow-hidden border shadow'}>
       <MapContainer
         center={center}
-        zoom={14}
+        zoom={initialZoom}
+        maxBounds={MINDANAO_BOUNDS}
+        maxBoundsViscosity={1}
+        minZoom={7}
         scrollWheelZoom={scrollWheelZoom}
+        wheelDebounceTime={80}
+        wheelPxPerZoomLevel={120}
+        zoomAnimation={false}
+        fadeAnimation={false}
+        markerZoomAnimation={false}
+        preferCanvas={true}
         dragging={dragging}
-        zoomControl={zoomControl}
+        zoomControl={false}
         doubleClickZoom={doubleClickZoom}
         attributionControl={showAttribution}
         style={{ height: '100%', width: '100%' }}
       >
-        {showLayersControl ? (
-          <LayersControl position="topright">
-            <LayersControl.BaseLayer name="Standard map">
-              <TileLayer
-                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              />
-            </LayersControl.BaseLayer>
-            <LayersControl.BaseLayer checked name="Satellite">
-              <TileLayer
-                attribution="Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community"
-                url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-              />
-            </LayersControl.BaseLayer>
-          </LayersControl>
-        ) : (
+        <MapResizeHandler />
+        {showLayersControl ? <MapStyleToggle showAttribution={showAttribution} initialSatellite={initialSatellite} /> : (
           <TileLayer
             attribution={showAttribution ? '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' : ''}
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
         )}
         <FlyTo target={flyTo} />
+        {fitBoundary && <FitBoundary points={boundaryPoints} />}
         {fitBounds && <FitBounds listings={display} />}
         {onAddBoundaryPoint && <BoundaryPointPicker onAddPoint={onAddBoundaryPoint} />}
-        <DraftBoundary points={boundaryPoints} />
+        <DraftBoundary points={boundaryPoints} pointColors={boundaryPointColors} pointSizes={boundaryPointSizes} />
         {display.map((listing) => {
           const isActive = selectedListingId
             ? listing.id === selectedListingId

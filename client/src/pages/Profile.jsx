@@ -4,6 +4,7 @@ import { useToast } from '../context/ToastContext.jsx'
 import api from '../api/api.js'
 import Avatar from '../components/Avatar.jsx'
 import { User, Mail, Phone, Shield, MapPin, Calendar, Edit3, Save, X, Lock, Eye, EyeOff, Landmark, Users, Camera, Trash2, Loader2 } from 'lucide-react'
+import { displayBranchName } from '../utils/branches.js'
 
 const InfoRow = ({ icon: Icon, label, value }) => (
   <div className="flex items-start gap-3 p-4 bg-brand-50/50 rounded-xl border border-brand-100/60">
@@ -263,7 +264,7 @@ export default function Profile() {
             <InfoRow icon={User} label="Extension Name" value={user?.extension_name} />
             <InfoRow icon={Mail} label="Email Address" value={user?.email} />
             <InfoRow icon={Shield} label="Role" value={user?.role} />
-            <InfoRow icon={Landmark} label="Branch" value={user?.branch} />
+            <InfoRow icon={Landmark} label="Branch" value={displayBranchName(user?.branch)} />
             <InfoRow icon={Phone} label="Contact Number 1" value={user?.phone} />
             <InfoRow icon={Phone} label="Contact Number 2" value={user?.phone2} />
             <InfoRow icon={Calendar} label="Birthdate" value={user?.birthdate} />
@@ -323,7 +324,7 @@ export default function Profile() {
               </Field>
               <Field label="Branch">
                 <div className="input-field bg-gray-100 text-gray-600 flex items-center">
-                  <Landmark className="w-4 h-4 mr-2 text-gray-400" /> {user?.branch || <span className="text-gray-400 italic">Not assigned</span>}
+                  <Landmark className="w-4 h-4 mr-2 text-gray-400" /> {user?.branch ? displayBranchName(user.branch) : <span className="text-gray-400 italic">Not assigned</span>}
                 </div>
               </Field>
             </div>

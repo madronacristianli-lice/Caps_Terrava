@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { X, Save, User, Mail, Phone, MapPin, Briefcase, Calendar, Home, Store, Users } from 'lucide-react'
 import api from '../api/api.js'
 import { useToast } from '../context/ToastContext.jsx'
+import { displayBranchName } from '../utils/branches.js'
 
 const BRANCHES = ['Main Tagum', 'Panabo', 'Sto. Tomas', 'Davao City', 'Mati City', 'Digos City']
 
@@ -81,7 +82,7 @@ export default function EditUserProfileModal({ user, onClose, onSaved }) {
         {type === 'select' ? (
           <select value={form[key] || ''} onChange={update(key)} required={required} disabled={disabled} className={inputClass}>
             <option value="">Select branch</option>
-            {BRANCHES.map((b) => <option key={b} value={b}>{b}</option>)}
+            {BRANCHES.map((b) => <option key={b} value={b}>{displayBranchName(b)}</option>)}
           </select>
         ) : (
           <input type={type} value={form[key] || ''} onChange={update(key)} required={required} disabled={disabled} className={inputClass} />

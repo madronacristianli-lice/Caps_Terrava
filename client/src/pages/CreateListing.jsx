@@ -52,6 +52,7 @@ export default function CreateListing() {
 
     try {
       await api.post('/listings', data, { headers: { 'Content-Type': 'multipart/form-data' } })
+      if (payload._draftKey) localStorage.removeItem(payload._draftKey)
       addToast('Listing posted successfully!', 'success')
       navigate('/')
     } catch (err) {
@@ -87,6 +88,7 @@ export default function CreateListing() {
       {!loading && (
         <CreateListingForm
           initialBranch={user?.branch || ''}
+          branchLocked={user?.role === 'seller'}
           onSubmit={handleFormSubmit}
         />
       )}

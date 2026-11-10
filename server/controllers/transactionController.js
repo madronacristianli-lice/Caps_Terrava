@@ -11,9 +11,9 @@ exports.create = async (req, res) => {
     const listing = await db.LandListing.findByPk(listing_id);
     if (!listing || listing.archived) return res.status(404).json({ error: 'Listing not found' });
 
-    if (req.user.role === 'seller' && listing.seller_id !== req.user.id) {
-      return res.status(403).json({ error: 'You can only record payments for your own listings' });
-    }
+    // Any authenticated seller may collect a payment at their branch for an
+    // assigned property. The listing owner remains in seller_id, while the
+    // collecting seller is preserved in recorded_by for accountability.
 
     let finalBuyerId = req.user.id;
     if (['seller', 'admin'].includes(req.user.role)) {
@@ -66,9 +66,9 @@ exports.create = async (req, res) => {
       await allocatePayment(activeAccount.id, Number(amount));
     }
 
-    // Notify both buyer and seller about the successful transaction
-    const buyerUser  = await db.User.findByPk(finalBuyerId, { attributes: ['full_name'] });
-    const sellerUser = await db.User.findByPk(listing.seller_id, { attributes: ['full_name'] });
+    // Notify the buyer and, when a seller records the payment, only that
+    // seller's account. Seller notifications are account-specific; they must
+    // not become a feed of every payment recorded across Terrava.
     const paymentStatus = Number(totalPaid) >= Number(listing.price) ? 'fully paid' : 'partially paid';
     const notificationTitle = `Payment ${paymentStatus} for ${listing.title}`;
 
@@ -80,15 +80,25 @@ exports.create = async (req, res) => {
       data: { transaction_id: transaction.id, listing_id: listing.id }
     });
 
-    await createNotification({
-      user_id: listing.seller_id,
-      title: notificationTitle,
-      message: `${buyerUser?.full_name || 'A buyer'} ${paymentStatus} ₱${Number(amount).toLocaleString()} for "${listing.title}".`,
-      type: 'transaction',
-      data: { transaction_id: transaction.id, listing_id: listing.id }
-    });
+    if (req.user.role === 'seller') {
+      const buyerUser = await db.User.findByPk(finalBuyerId, { attributes: ['full_name'] });
+      const recorderUser = await db.User.findByPk(req.user.id, { attributes: ['full_name', 'branch'] });
 
-    const buyer  = await db.User.findByPk(req.user.id,       { attributes: ['full_name'] });
+      await createNotification({
+        user_id: req.user.id,
+        title: notificationTitle,
+        message: `${buyerUser?.full_name || 'A buyer'} ${paymentStatus} ₱${Number(amount).toLocaleString()} for "${listing.title}". Payment received at ${recorderUser?.branch || 'your branch'}${recorderUser?.full_name ? ` by ${recorderUser.full_name}` : ''}.`,
+        type: 'transaction',
+        data: {
+          transaction_id: transaction.id,
+          listing_id: listing.id,
+          payment_branch: recorderUser?.branch || null,
+          recorded_by: req.user.id
+        }
+      });
+    }
+
+    const buyer  = await db.User.findByPk(finalBuyerId,       { attributes: ['full_name'] });
     const seller = await db.User.findByPk(listing.seller_id, { attributes: ['full_name'] });
     const ethResult = await recordPaymentOnChain({
       listingId:     listing_id,
@@ -116,7 +126,7 @@ exports.getAll = async (req, res) => {
         { model: db.LandListing, as: 'listing', attributes: ['id', 'title', 'location_text', 'area_sqm', 'price', 'branch', 'status', 'lot_block_number'] },
         { model: db.User, as: 'buyer', attributes: ['id', 'full_name', 'email', 'phone', 'photo_url'] },
         { model: db.User, as: 'seller', attributes: ['id', 'full_name', 'email', 'phone', 'branch', 'photo_url'] },
-        { model: db.User, as: 'recorder', attributes: ['id', 'full_name', 'email', 'role'] },
+        { model: db.User, as: 'recorder', attributes: ['id', 'full_name', 'email', 'role', 'branch'] },
         { model: db.Block, as: 'block' }
       ],
       order: [['created_at', 'DESC']]
@@ -129,16 +139,15 @@ exports.getAll = async (req, res) => {
 
 exports.getMine = async (req, res) => {
   try {
-    const where = req.user.role === 'seller'
-      ? { seller_id: req.user.id }
-      : { buyer_id: req.user.id };
+    const isSeller = req.user.role === 'seller';
+    const where = isSeller ? {} : { buyer_id: req.user.id };
     const transactions = await db.Transaction.findAll({
       where,
       include: [
         { model: db.LandListing, as: 'listing', where: { archived: false }, required: true, attributes: ['id', 'title', 'location_text', 'area_sqm', 'price', 'branch', 'status', 'lot_block_number'] },
         { model: db.User, as: 'buyer', attributes: ['id', 'full_name', 'email', 'phone', 'photo_url'] },
         { model: db.User, as: 'seller', attributes: ['id', 'full_name', 'email', 'phone', 'branch', 'photo_url'] },
-        { model: db.User, as: 'recorder', attributes: ['id', 'full_name', 'email', 'role'] },
+        { model: db.User, as: 'recorder', attributes: ['id', 'full_name', 'email', 'role', 'branch'] },
         { model: db.Block, as: 'block' }
       ],
       order: [['created_at', 'DESC']]

@@ -9,10 +9,13 @@ import {
   ChevronLeft,
   ChevronRight,
   Image as ImageIcon,
-  Plus
+  Plus,
+  Maximize2,
+  Minimize2
 } from 'lucide-react'
 import MapView from './MapView.jsx'
 import PesoIcon from './PesoIcon.jsx'
+import { BOUNDARY_POINT_COLORS, DEFAULT_BOUNDARY_POINT_COLOR, BOUNDARY_POINT_SIZES, DEFAULT_BOUNDARY_POINT_SIZE } from '../utils/mapColors.js'
 
 const ZONING_OPTIONS = ['Residential', 'Commercial', 'Agricultural', 'Industrial']
 
@@ -104,6 +107,8 @@ export default function LandDetailsModal({ isOpen, onClose, initialData = {}, ex
     latitude: '',
     longitude: '',
     polygon_points: [],
+    boundary_point_colors: [],
+    boundary_point_sizes: [],
     lot_block_number: '',
     zoning_classification: '',
     land_title_status: '',
@@ -128,6 +133,7 @@ export default function LandDetailsModal({ isOpen, onClose, initialData = {}, ex
 
   useEffect(() => {
     if (isOpen && initialData) {
+      setMapExpanded(false)
       const coords = initialData.polygon_geojson?.coordinates?.[0] || []
       const points = coords.length > 1
         ? coords.slice(0, -1).map(([lng, lat]) => [lat, lng])
@@ -136,6 +142,8 @@ export default function LandDetailsModal({ isOpen, onClose, initialData = {}, ex
         ...prev,
         ...initialData,
         polygon_points: initialData.polygon_points || points,
+        boundary_point_colors: initialData.boundary_point_colors || initialData.polygon_geojson?.properties?.point_colors || [],
+        boundary_point_sizes: initialData.boundary_point_sizes || initialData.polygon_geojson?.properties?.point_sizes || [],
         utilities: {
           electricity_ready: false,
           water_ready: false,
@@ -150,6 +158,10 @@ export default function LandDetailsModal({ isOpen, onClose, initialData = {}, ex
     setForm((prev) => ({ ...prev, [field]: value }))
   }
 
+  const [pointColor, setPointColor] = useState(DEFAULT_BOUNDARY_POINT_COLOR)
+  const [pointSize, setPointSize] = useState(DEFAULT_BOUNDARY_POINT_SIZE)
+  const [mapExpanded, setMapExpanded] = useState(false)
+
   const addPolygonPoint = () => {
     if (readOnly) return
     const lat = parseFloat(form.latitude)
@@ -161,6 +173,8 @@ export default function LandDetailsModal({ isOpen, onClose, initialData = {}, ex
     setForm((prev) => ({
       ...prev,
       polygon_points: [...prev.polygon_points, [lat, lng]],
+      boundary_point_colors: [...(prev.boundary_point_colors || []), pointColor],
+      boundary_point_sizes: [...(prev.boundary_point_sizes || []), pointSize],
       latitude: '',
       longitude: ''
     }))
@@ -170,7 +184,9 @@ export default function LandDetailsModal({ isOpen, onClose, initialData = {}, ex
     if (readOnly) return
     setForm((prev) => ({
       ...prev,
-      polygon_points: prev.polygon_points.filter((_, i) => i !== index)
+      polygon_points: prev.polygon_points.filter((_, i) => i !== index),
+      boundary_point_colors: (prev.boundary_point_colors || []).filter((_, i) => i !== index),
+      boundary_point_sizes: (prev.boundary_point_sizes || []).filter((_, i) => i !== index)
     }))
   }
 
@@ -178,7 +194,9 @@ export default function LandDetailsModal({ isOpen, onClose, initialData = {}, ex
     if (readOnly) return
     setForm((prev) => ({
       ...prev,
-      polygon_points: [...prev.polygon_points, [lat, lng]]
+      polygon_points: [...prev.polygon_points, [lat, lng]],
+      boundary_point_colors: [...(prev.boundary_point_colors || []), pointColor],
+      boundary_point_sizes: [...(prev.boundary_point_sizes || []), pointSize]
     }))
   }
 
@@ -365,19 +383,51 @@ export default function LandDetailsModal({ isOpen, onClose, initialData = {}, ex
                       {form.polygon_points.length > 0 && (
                         <button
                           type="button"
-                          onClick={() => setForm((prev) => ({ ...prev, polygon_points: [], latitude: '', longitude: '' }))}
+                          onClick={() => setForm((prev) => ({ ...prev, polygon_points: [], boundary_point_colors: [], boundary_point_sizes: [], latitude: '', longitude: '' }))}
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white text-red-600 border border-red-200 rounded-lg text-xs font-medium hover:bg-red-50 transition"
                         >
                           Clear All
                         </button>
                       )}
                     </div>
+                    <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                      <span className="mr-1 text-xs font-semibold text-slate-600">Point color:</span>
+                      {BOUNDARY_POINT_COLORS.map((color) => (
+                        <button
+                          key={color.value}
+                          type="button"
+                          onClick={() => setPointColor(color.value)}
+                          title={color.name}
+                          aria-label={`Use ${color.name} for the next boundary point`}
+                          aria-pressed={pointColor === color.value}
+                          className={`h-6 w-6 rounded-full border-2 transition hover:scale-110 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-1 ${pointColor === color.value ? 'border-slate-900 ring-2 ring-emerald-200' : 'border-white'}`}
+                          style={{ backgroundColor: color.value }}
+                        />
+                      ))}
+                      <span className="text-[11px] text-slate-500">Applies to the next point</span>
+                      <span className="mx-1 h-5 w-px bg-slate-300" aria-hidden="true" />
+                      <span className="mr-1 text-xs font-semibold text-slate-600">Point size:</span>
+                      {BOUNDARY_POINT_SIZES.map((size) => (
+                        <button
+                          key={size.value}
+                          type="button"
+                          onClick={() => setPointSize(size.value)}
+                          title={size.name}
+                          aria-label={`Use ${size.name} point size for the next boundary point`}
+                          aria-pressed={pointSize === size.value}
+                          className={`inline-flex h-6 w-6 items-center justify-center rounded-full border text-[10px] font-bold transition hover:scale-110 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-1 ${pointSize === size.value ? 'border-slate-900 bg-white text-slate-900 ring-2 ring-emerald-200' : 'border-slate-300 bg-white text-slate-500'}`}
+                        >
+                          {size.label}
+                        </button>
+                      ))}
+                    </div>
                     {form.polygon_points.length > 0 && (
                       <div className="flex flex-wrap gap-2 mb-3">
                         {form.polygon_points.map(([lat, lng], idx) => (
                           <div
                             key={idx}
-                            className="inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-50 text-emerald-800 rounded-full text-xs font-medium"
+                            className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium"
+                            style={{ backgroundColor: BOUNDARY_POINT_COLORS.find((color) => color.value === (form.boundary_point_colors?.[idx] || DEFAULT_BOUNDARY_POINT_COLOR))?.swatch || '#d1fae5', color: '#14532d' }}
                           >
                             P{idx + 1}: {Number(lat).toFixed(5)}, {Number(lng).toFixed(5)}
                             <button
@@ -396,13 +446,28 @@ export default function LandDetailsModal({ isOpen, onClose, initialData = {}, ex
                 {readOnly && form.polygon_points.length === 0 && (
                   <p className="text-xs text-slate-500 mb-3">No boundary polygon has been set for this listing.</p>
                 )}
-                <MapView
-                  listings={[]}
-                  height="280px"
-                  boundaryPoints={form.polygon_points}
-                  onAddBoundaryPoint={readOnly ? null : addMapPolygonPoint}
-                  scrollWheelZoom={false}
-                />
+                <div className={mapExpanded ? 'fixed inset-4 z-[80] rounded-2xl border-2 border-emerald-200 bg-white p-2 shadow-2xl sm:inset-8' : 'relative h-[280px]'}>
+                  <button
+                    type="button"
+                    onClick={() => setMapExpanded((expanded) => !expanded)}
+                    title={mapExpanded ? 'Close expanded map' : 'Expand map'}
+                    aria-label={mapExpanded ? 'Close expanded map' : 'Expand map'}
+                    className="absolute left-3 top-3 z-[1001] inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white/95 text-emerald-800 shadow-lg backdrop-blur transition hover:bg-emerald-50 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                  >
+                    {mapExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+                  </button>
+                  <MapView
+                    listings={[]}
+                    height="100%"
+                    boundaryPoints={form.polygon_points}
+                    boundaryPointColors={form.boundary_point_colors}
+                    boundaryPointSizes={form.boundary_point_sizes}
+                    onAddBoundaryPoint={readOnly ? null : addMapPolygonPoint}
+                    scrollWheelZoom={false}
+                    fitBoundary
+                    initialSatellite={false}
+                  />
+                </div>
               </div>
             </div>
           </Section>
@@ -751,15 +816,8 @@ export default function LandDetailsModal({ isOpen, onClose, initialData = {}, ex
         )}
 
         {/* Footer */}
-        <div className="border-t border-slate-100 p-5 bg-white flex items-center justify-end gap-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-5 py-2.5 text-sm font-semibold text-slate-600 hover:text-slate-800 rounded-xl hover:bg-slate-100 transition"
-          >
-            {readOnly ? 'Close' : 'Cancel'}
-          </button>
-          {!readOnly && (
+        {!readOnly && (
+          <div className="border-t border-slate-100 p-5 bg-white flex items-center justify-end gap-3">
             <button
               type="button"
               onClick={handleSaveChanges}
@@ -767,8 +825,8 @@ export default function LandDetailsModal({ isOpen, onClose, initialData = {}, ex
             >
               <Save className="w-4 h-4" /> Save Changes
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   )

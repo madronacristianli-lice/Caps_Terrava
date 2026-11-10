@@ -14,6 +14,7 @@ import PesoIcon from '../components/PesoIcon.jsx'
 import FavoriteButton from '../components/FavoriteButton.jsx'
 import Avatar from '../components/Avatar.jsx'
 import MessageSellerModal from '../components/MessageSellerModal.jsx'
+import { displayBranchName } from '../utils/branches.js'
 
 export default function ListingDetail() {
   const { id } = useParams()
@@ -89,7 +90,7 @@ export default function ListingDetail() {
             <h1 className="text-2xl md:text-3xl font-bold text-gray-900">{listing.title}</h1>
             {listing.branch && (
               <span className="px-2 py-0.5 rounded text-xs bg-brand-100 text-brand-700 font-medium">
-                {listing.branch}
+                {displayBranchName(listing.branch)}
               </span>
             )}
             <FavoriteButton listingId={listing.id} size={24} className="ml-2" />
@@ -261,23 +262,29 @@ export default function ListingDetail() {
       </div>
 
       {/* Expanded Listing Details */}
-      <div className="bg-white p-6 rounded-2xl shadow-card border border-gray-100">
-        <h3 className="font-semibold text-lg mb-4 text-gray-900">Property Details</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="bg-slate-50/80 p-6 rounded-2xl shadow-sm border border-slate-200">
+        <div className="flex items-center justify-between gap-3 mb-5">
           <div>
-            <h4 className="text-sm font-semibold text-gray-500 mb-3 flex items-center gap-2">
+            <h3 className="font-bold text-lg text-gray-900">Property Details</h3>
+            <p className="text-sm text-gray-500 mt-1">Important information about this land</p>
+          </div>
+          <span className="hidden sm:inline-flex items-center rounded-full bg-white border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600">Listing information</span>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h4 className="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2">
               <FileText className="w-4 h-4 text-brand-600" /> Legal & Regulatory
             </h4>
-            <div className="space-y-3">
-              <div className="flex justify-between text-sm">
+            <div className="space-y-0 divide-y divide-slate-100">
+              <div className="flex items-start justify-between gap-4 py-3 first:pt-0 text-sm">
                 <span className="text-gray-500">Zoning</span>
                 <span className="font-medium text-gray-900">{listing.zoning_classification || '—'}</span>
               </div>
-              <div className="flex justify-between text-sm">
+              <div className="flex items-start justify-between gap-4 py-3 text-sm">
                 <span className="text-gray-500">Title Status</span>
                 <span className="font-medium text-gray-900">{listing.land_title_status || '—'}</span>
               </div>
-              <div className="flex justify-between text-sm">
+              <div className="flex items-start justify-between gap-4 py-3 last:pb-0 text-sm">
                 <span className="text-gray-500">Lot / Block</span>
                 <span className="font-medium text-gray-900">{listing.lot_block_number || '—'}</span>
               </div>
@@ -289,36 +296,36 @@ export default function ListingDetail() {
             const isAssignedBuyer = user && user.role === 'buyer' && listing.assigned_buyer_id === user.id
             return isOwnerOrAdmin || isAssignedBuyer
           })() && (
-            <div>
-              <h4 className="text-sm font-semibold text-gray-500 mb-3 flex items-center gap-2">
+            <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+              <h4 className="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2">
                 <PesoIcon className="w-4 h-4 text-brand-600" /> Financial Terms
               </h4>
-              <div className="space-y-3">
-                <div className="flex justify-between text-sm">
+              <div className="space-y-0 divide-y divide-slate-100">
+                <div className="flex items-start justify-between gap-4 py-3 first:pt-0 text-sm">
                   <span className="text-gray-500">Reservation Fee</span>
                   <span className="font-medium text-gray-900">{listing.reservation_fee ? `₱${Number(listing.reservation_fee).toLocaleString()}` : '—'}</span>
                 </div>
-                <div className="flex justify-between text-sm">
+                <div className="flex items-start justify-between gap-4 py-3 text-sm">
                   <span className="text-gray-500">Min. Down Payment</span>
                   <span className="font-medium text-gray-900">{listing.minimum_down_payment_pct || '—'}</span>
                 </div>
-                <div className="flex justify-between text-sm">
+                <div className="flex items-start justify-between gap-4 py-3 text-sm">
                   <span className="text-gray-500">Cash Discount</span>
                   <span className="font-medium text-gray-900">{listing.cash_term_enabled ? `${listing.cash_term_discount_pct}%` : 'Not offered'}</span>
                 </div>
-                <div className="flex justify-between text-sm">
+                <div className="flex items-start justify-between gap-4 py-3 text-sm">
                   <span className="text-gray-500">In-House Financing</span>
                   <span className="font-medium text-gray-900">{listing.in_house_financing_enabled ? `${listing.in_house_max_term_years} yrs @ ${listing.in_house_interest_rate_pct}%` : 'Not offered'}</span>
                 </div>
-                <div className="flex justify-between text-sm">
+                <div className="flex items-start justify-between gap-4 py-3 text-sm">
                   <span className="text-gray-500">Bank / Gov Loan</span>
                   <span className="font-medium text-gray-900">{listing.bank_government_loan_enabled ? 'Supported' : 'Not supported'}</span>
                 </div>
-                <div className="flex justify-between text-sm">
+                <div className="flex items-start justify-between gap-4 py-3 text-sm">
                   <span className="text-gray-500">Monthly Payment</span>
                   <span className="font-medium text-gray-900">{listing.monthly_payment_amount ? `₱${Number(listing.monthly_payment_amount).toLocaleString()}` : '—'}</span>
                 </div>
-                <div className="flex justify-between text-sm">
+                <div className="flex items-start justify-between gap-4 py-3 last:pb-0 text-sm">
                   <span className="text-gray-500">Late Penalty</span>
                   <span className="font-medium text-gray-900">{listing.penalty_rate_pct ? `${listing.penalty_rate_pct}%` : '—'}</span>
                 </div>
@@ -326,27 +333,27 @@ export default function ListingDetail() {
             </div>
           )}
 
-          <div>
-            <h4 className="text-sm font-semibold text-gray-500 mb-3 flex items-center gap-2">
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h4 className="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2">
               <Mountain className="w-4 h-4 text-brand-600" /> Physical Attributes
             </h4>
-            <div className="space-y-3">
-              <div className="flex justify-between text-sm">
+            <div className="space-y-0 divide-y divide-slate-100">
+              <div className="flex items-start justify-between gap-4 py-3 first:pt-0 text-sm">
                 <span className="text-gray-500">Terrain</span>
                 <span className="font-medium text-gray-900">{listing.terrain_topography || '—'}</span>
               </div>
-              <div className="flex justify-between text-sm">
+              <div className="flex items-start justify-between gap-4 py-3 last:pb-0 text-sm">
                 <span className="text-gray-500">Lot Configuration</span>
                 <span className="font-medium text-gray-900">{listing.lot_configuration || '—'}</span>
               </div>
             </div>
           </div>
 
-          <div>
-            <h4 className="text-sm font-semibold text-gray-500 mb-3 flex items-center gap-2">
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h4 className="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2">
               <Zap className="w-4 h-4 text-brand-600" /> Utilities Readiness
             </h4>
-            <div className="flex flex-wrap gap-2">
+            <div className="min-h-10 flex flex-wrap content-start gap-2 rounded-lg border border-slate-100 bg-slate-50 p-3">
               {listing.utilities?.electricity_ready && (
                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
                   <Zap className="w-3 h-3" /> Electricity

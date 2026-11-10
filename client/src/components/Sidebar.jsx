@@ -42,7 +42,8 @@ export default function Sidebar({ mobileOpen, onMobileToggle }) {
 
   const navItems = user.role === 'seller' ? sellerNav : buyerNav
 
-  const NavItem = ({ to, icon: Icon, label, badge }) => {
+  const NavItem = ({ to, icon: Icon, label, badge, isMobile = false }) => {
+    const isCollapsed = collapsed && !isMobile
     const active = pathname === to || (to !== '/' && pathname.startsWith(to))
     return (
       <Link
@@ -53,19 +54,19 @@ export default function Sidebar({ mobileOpen, onMobileToggle }) {
           active
             ? 'bg-white text-brand-900 font-bold shadow-md'
             : 'text-white/70 hover:bg-white/10 hover:text-white'
-        } ${collapsed ? 'justify-center px-3 py-3' : 'px-4 py-3'}`}
+        } ${isCollapsed ? 'justify-center px-3 py-3' : 'px-4 py-3'}`}
       >
         <div className="relative flex-shrink-0">
           <Icon className={`w-5 h-5 transition ${active ? 'text-brand-700' : 'group-hover:text-white'}`} />
-          {badge > 0 && collapsed && (
+          {badge > 0 && isCollapsed && (
             <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">{badge > 9 ? '9+' : badge}</span>
           )}
         </div>
-        {!collapsed && <span className="text-sm whitespace-nowrap">{label}</span>}
-        {!collapsed && badge > 0 && (
+        {!isCollapsed && <span className="text-sm whitespace-nowrap">{label}</span>}
+        {!isCollapsed && badge > 0 && (
           <span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">{badge > 9 ? '9+' : badge}</span>
         )}
-        {!collapsed && !badge && active && <span className="ml-auto w-2 h-2 bg-brand-500 rounded-full" />}
+        {!isCollapsed && !badge && active && <span className="ml-auto w-2 h-2 bg-brand-500 rounded-full" />}
       </Link>
     )
   }
@@ -88,7 +89,7 @@ export default function Sidebar({ mobileOpen, onMobileToggle }) {
       {/* Nav items */}
       <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
         {navItems.map((item) => (
-          <NavItem key={item.to} {...item} />
+          <NavItem key={item.to} {...item} isMobile={isMobile} />
         ))}
       </nav>
 

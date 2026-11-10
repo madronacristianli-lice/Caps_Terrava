@@ -32,6 +32,16 @@ const notifyAdmins = async ({ title, message, type = 'system', data = null }) =>
   }
 };
 
+const canManageListing = async (listing, user) => {
+  if (!listing || !user) return false;
+  if (user.role === 'admin') return true;
+  if (user.role !== 'seller') return false;
+  // Listings are shared across seller branches. Any authenticated seller may
+  // coordinate the buyer or submit an edit; seller edits are still reset to
+  // pending review below and require administrator verification before public use.
+  return true;
+};
+
 exports.create = async (req, res) => {
   try {
     const {
@@ -162,7 +172,7 @@ exports.assignBuyer = async (req, res) => {
   try {
     const listing = await db.LandListing.findByPk(req.params.id);
     if (!listing) return res.status(404).json({ error: 'Listing not found' });
-    if (listing.seller_id !== req.user.id && req.user.role !== 'admin') {
+    if (!(await canManageListing(listing, req.user))) {
       return res.status(403).json({ error: 'Forbidden' });
     }
     const { buyer_id } = req.body;
@@ -181,7 +191,7 @@ exports.unassignBuyer = async (req, res) => {
   try {
     const listing = await db.LandListing.findByPk(req.params.id);
     if (!listing) return res.status(404).json({ error: 'Listing not found' });
-    if (listing.seller_id !== req.user.id && req.user.role !== 'admin') {
+    if (!(await canManageListing(listing, req.user))) {
       return res.status(403).json({ error: 'Forbidden' });
     }
     await listing.update({ assigned_buyer_id: null, status: 'available' });
@@ -201,7 +211,9 @@ exports.getById = async (req, res) => {
     });
     if (!listing) return res.status(404).json({ error: 'Listing not found' });
     const isAdmin = req.user && req.user.role === 'admin';
+    const isSeller = req.user && req.user.role === 'seller';
     if (listing.archived && !isAdmin) return res.status(404).json({ error: 'Listing not found' });
+    if (!listing.is_verified && !isAdmin && !isSeller) return res.status(404).json({ error: 'Listing not found' });
     res.json(listing);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -214,7 +226,7 @@ exports.update = async (req, res) => {
       include: [{ model: db.Transaction, as: 'transactions', attributes: ['id'] }]
     });
     if (!listing) return res.status(404).json({ error: 'Listing not found' });
-    if (listing.seller_id !== req.user.id && req.user.role !== 'admin') {
+    if (!(await canManageListing(listing, req.user))) {
       return res.status(403).json({ error: 'Forbidden' });
     }
     if (listing.transactions && listing.transactions.length > 0) {
@@ -264,6 +276,7 @@ exports.update = async (req, res) => {
     const wasVerified = listing.is_verified;
     const isAdminVerifying = is_verified !== undefined && req.user.role === 'admin' && String(is_verified) === 'true' && !wasVerified;
     if (isAdminVerifying) updates.is_verified = true;
+    if (req.user.role === 'seller') updates.is_verified = false;
 
     // Merge existing photos with new uploads and removals
     let photos = listing.photos || [];
@@ -317,7 +330,7 @@ exports.remove = async (req, res) => {
   try {
     const listing = await db.LandListing.findByPk(req.params.id);
     if (!listing) return res.status(404).json({ error: 'Listing not found' });
-    if (listing.seller_id !== req.user.id && req.user.role !== 'admin') {
+    if (!(await canManageListing(listing, req.user))) {
       return res.status(403).json({ error: 'Forbidden' });
     }
     await listing.destroy();

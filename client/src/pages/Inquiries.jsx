@@ -73,14 +73,14 @@ export default function Inquiries() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border border-brand-100 bg-white/80 px-5 py-4 shadow-sm">
         <div className="flex items-center gap-3">
-          <div className="bg-brand-100 p-2 rounded-lg">
+          <div className="bg-brand-100 p-2.5 rounded-xl shadow-sm">
             <MessageCircle className="w-6 h-6 text-brand-700" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Messages</h1>
-            <p className="text-sm text-gray-500">
+            <h1 className="text-2xl md:text-3xl font-extrabold text-gray-900">Messages</h1>
+            <p className="text-sm text-gray-600 mt-0.5">
               {isSeller ? 'Inquiries from buyers about your listings.' : 'Your messages to sellers.'}
             </p>
           </div>
@@ -92,7 +92,7 @@ export default function Inquiries() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search messages..."
-            className="pl-9 pr-8 py-2 rounded-xl border border-gray-200 bg-white text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 w-full sm:w-64 transition"
+            className="pl-9 pr-8 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-gray-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 w-full sm:w-64 transition"
           />
           {search && (
             <button
@@ -119,18 +119,29 @@ export default function Inquiries() {
           {filteredInquiries.map((inq) => (
             <div
               key={inq.id}
-              className={`bg-white rounded-2xl shadow-card border border-gray-100 p-5 ${!inq.reply && isSeller ? 'ring-1 ring-brand-100' : ''}`}
+              className={`relative overflow-hidden rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.07)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgba(15,23,42,0.11)] sm:p-6 ${
+                inq.reply ? 'border-l-4 border-l-emerald-500' : 'border-l-4 border-l-amber-400'
+              }`}
             >
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
-                <div className="flex items-center gap-2">
-                  <Home className="w-4 h-4 text-brand-600" />
-                  <span className="font-semibold text-gray-900">{inq.listing?.title || 'Listing'}</span>
+              <div className={`absolute inset-x-0 top-0 h-1 ${inq.reply ? 'bg-emerald-500' : 'bg-amber-400'}`} />
+              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-4">
+                <div className="flex min-w-0 items-start gap-2.5">
+                  <div className="mt-0.5 rounded-lg bg-brand-50 p-1.5">
+                    <Home className="w-4 h-4 text-brand-600" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-brand-600">Property inquiry</p>
+                    <span className="block truncate text-base font-bold text-gray-900">{inq.listing?.title || 'Listing'}</span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                  <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold ${inq.reply ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                    {inq.reply ? 'Replied' : 'Awaiting reply'}
+                  </span>
                   {inq.listing && (
                     <button
                       onClick={() => navigate('/map', { state: { selectedListing: inq.listing } })}
-                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-600 hover:text-brand-700 hover:bg-brand-50 px-2.5 py-1.5 rounded-lg transition"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-brand-200 px-2.5 py-1.5 text-xs font-semibold text-brand-700 transition hover:bg-brand-50"
                     >
                       <Map className="w-3.5 h-3.5" /> View Map
                     </button>
@@ -142,25 +153,28 @@ export default function Inquiries() {
                 </div>
               </div>
 
-              <div className="bg-brand-50/60 rounded-xl p-4 border border-brand-100/60 mb-4">
-                <div className="flex items-center gap-2 mb-1.5">
-                  <User className="w-4 h-4 text-brand-600" />
-                  <span className="text-sm font-semibold text-gray-900">
+              <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <User className="w-4 h-4 text-brand-600" />
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">{isSeller ? 'Buyer message' : 'Your message'}</span>
+                  </div>
+                  <span className="text-xs font-semibold text-slate-500">
                     {isSeller ? (inq.buyer?.full_name || 'Buyer') : 'You'}
                   </span>
                 </div>
-                <p className="text-sm text-gray-700 whitespace-pre-line">{inq.message}</p>
+                <p className="whitespace-pre-line text-sm leading-6 text-slate-700">{inq.message}</p>
               </div>
 
               {inq.reply ? (
-                <div className="bg-green-50/70 rounded-xl p-4 border border-green-100">
-                  <div className="flex items-center gap-2 mb-1.5">
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4">
+                  <div className="mb-2 flex items-center gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600" />
-                    <span className="text-sm font-semibold text-green-800">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-700">
                       {isSeller ? 'Your reply' : 'Seller reply'}
                     </span>
                   </div>
-                  <p className="text-sm text-gray-700 whitespace-pre-line">{inq.reply}</p>
+                  <p className="whitespace-pre-line text-sm leading-6 text-slate-700">{inq.reply}</p>
                 </div>
               ) : isSeller ? (
                 <div className="mt-2">
@@ -192,14 +206,16 @@ export default function Inquiries() {
                   ) : (
                     <button
                       onClick={() => setReplyId(inq.id)}
-                      className="inline-flex items-center gap-2 text-sm font-semibold text-brand-600 hover:text-brand-700 hover:bg-brand-50 px-3 py-2 rounded-lg transition"
+                      className="inline-flex items-center gap-2 rounded-xl border border-brand-200 bg-white px-3.5 py-2.5 text-sm font-semibold text-brand-700 shadow-sm transition hover:bg-brand-50"
                     >
                       <Reply className="w-4 h-4" /> Reply
                     </button>
                   )}
                 </div>
               ) : (
-                <p className="text-sm text-amber-600 font-medium">Waiting for seller reply.</p>
+                <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-sm font-semibold text-amber-700">
+                  <Clock className="h-4 w-4" /> Waiting for seller reply
+                </div>
               )}
             </div>
           ))}

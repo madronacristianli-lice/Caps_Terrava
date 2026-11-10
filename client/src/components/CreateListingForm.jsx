@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import {
   MapPin,
   FileText,
@@ -8,14 +8,21 @@ import {
   Upload,
   Check,
   ChevronDown,
-  X
+  X,
+  Search,
+  Loader2,
+  Maximize2,
+  Minimize2
 } from 'lucide-react'
 import PesoIcon from './PesoIcon.jsx'
 import MapView from './MapView.jsx'
+import ConfirmDialog from './ConfirmDialog.jsx'
+import { displayBranchName, normalizeBranchName, MINDANAO_CITIES, BRANCH_COORDINATES, BRANCH_ZOOM } from '../utils/branches.js'
+import { BOUNDARY_POINT_COLORS, DEFAULT_BOUNDARY_POINT_COLOR, BOUNDARY_POINT_SIZES, DEFAULT_BOUNDARY_POINT_SIZE } from '../utils/mapColors.js'
 
 const BRANCHES = [
   'Main Tagum',
-  'Panabo City',
+  'Panabo',
   'Sto. Tomas',
   'Davao City',
   'Mati City',
@@ -35,6 +42,16 @@ const TITLE_STATUS_OPTIONS = [
   'Clean Title',
   'Under Process'
 ]
+
+const formatAmount = (value) => {
+  const raw = String(value ?? '').replace(/,/g, '')
+  if (!raw) return ''
+  const [whole, decimal] = raw.split('.')
+  const formattedWhole = whole.replace(/\D/g, '').replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+  return decimal !== undefined ? `${formattedWhole}.${decimal.replace(/\D/g, '').slice(0, 2)}` : formattedWhole
+}
+
+const numericAmount = (value) => String(value ?? '').replace(/,/g, '')
 
 
 const TERRAIN_OPTIONS = [
@@ -84,19 +101,24 @@ const Input = ({ type = 'text', value, onChange, placeholder, required, min, max
   />
 )
 
-const Select = ({ value, onChange, options, placeholder }) => (
+const Select = ({ value, onChange, options, placeholder, disabled = false }) => (
   <div className="relative">
     <select
       value={value}
       onChange={onChange}
-      className="w-full appearance-none border border-slate-300 rounded-xl px-4 py-2.5 pr-10 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition"
+      disabled={disabled}
+      className={`w-full appearance-none border border-slate-300 rounded-xl px-4 py-2.5 pr-10 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition ${disabled ? 'cursor-not-allowed bg-slate-100 text-slate-500' : ''}`}
     >
       <option value="">{placeholder}</option>
-      {options.map((opt) => (
-        <option key={opt} value={opt}>
-          {opt}
-        </option>
-      ))}
+      {options.map((opt) => {
+        const optionValue = typeof opt === 'string' ? opt : opt.value
+        const optionLabel = typeof opt === 'string' ? opt : opt.label
+        return (
+          <option key={optionValue} value={optionValue}>
+            {optionLabel}
+          </option>
+        )
+      })}
     </select>
     <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
   </div>
@@ -144,7 +166,7 @@ const FileDrop = ({ label, accept, preview, fileName, isPdf, inputRef, onChange,
   </div>
 )
 
-export default function CreateListingForm({ onSubmit, initialBranch = '', initialData = null, existingPhotos = [], existingPhotoGeotags = [], isEdit = false }) {
+export default function CreateListingForm({ onSubmit, initialBranch = '', initialData = null, existingPhotos = [], existingPhotoGeotags = [], isEdit = false, branchLocked = false }) {
   const buildInitialState = () => {
     const data = initialData || {}
     const coords = data.polygon_geojson?.coordinates?.[0] || []
@@ -152,13 +174,17 @@ export default function CreateListingForm({ onSubmit, initialBranch = '', initia
     return {
       title: data.title || '',
       description: data.description || '',
-      branch: data.branch || initialBranch || '',
+      branch: branchLocked
+        ? normalizeBranchName(initialBranch || data.branch || '')
+        : normalizeBranchName(data.branch || initialBranch || ''),
       location_text: data.location_text || '',
       area_sqm: data.area_sqm || '',
       total_area_sqm: data.total_area_sqm || data.area_sqm || '',
       latitude: data.latitude || (points[0] ? points[0][0] : ''),
       longitude: data.longitude || (points[0] ? points[0][1] : ''),
       polygon_points: data.polygon_points || points,
+      boundary_point_colors: data.boundary_point_colors || data.polygon_geojson?.properties?.point_colors || [],
+      boundary_point_sizes: data.boundary_point_sizes || data.polygon_geojson?.properties?.point_sizes || [],
       zoning_classification: data.zoning_classification || '',
       land_title_status: data.land_title_status || '',
       total_contract_price: data.total_contract_price || data.price || '',
@@ -185,13 +211,62 @@ export default function CreateListingForm({ onSubmit, initialBranch = '', initia
   }
 
   const [form, setForm] = useState(buildInitialState)
+  const [mapCity, setMapCity] = useState('')
+  const initialBranchCenter = !initialData ? BRANCH_COORDINATES[normalizeBranchName(initialBranch)] : null
+  const [mapCityFocus, setMapCityFocus] = useState(initialBranchCenter ? { center: initialBranchCenter, zoom: BRANCH_ZOOM } : null)
+  const [mapSearchQuery, setMapSearchQuery] = useState('')
+  const [mapSearchResults, setMapSearchResults] = useState([])
+  const [mapSearchLoading, setMapSearchLoading] = useState(false)
+  const [mapSearchError, setMapSearchError] = useState('')
+  const [pointColor, setPointColor] = useState(DEFAULT_BOUNDARY_POINT_COLOR)
+  const [pointSize, setPointSize] = useState(DEFAULT_BOUNDARY_POINT_SIZE)
+  const [mapExpanded, setMapExpanded] = useState(false)
   const [photos, setPhotos] = useState([])
   const [photoPreviews, setPhotoPreviews] = useState([])
   const [tctPreview, setTctPreview] = useState(null)
   const [taxPreview, setTaxPreview] = useState(null)
+  const [formErrors, setFormErrors] = useState([])
+  const [draftRestored, setDraftRestored] = useState(false)
+  const [draftLoaded, setDraftLoaded] = useState(false)
+  const [confirmation, setConfirmation] = useState(null)
   const photoInputRef = useRef(null)
   const tctInputRef = useRef(null)
   const taxInputRef = useRef(null)
+  const errorSummaryRef = useRef(null)
+  const draftKey = `terrava-listing-draft:${isEdit ? `edit-${initialData?.id || 'unknown'}` : 'new'}`
+
+  useEffect(() => {
+    try {
+      const savedDraft = localStorage.getItem(draftKey)
+      if (savedDraft) {
+        const parsedDraft = JSON.parse(savedDraft)
+        setForm((current) => ({
+          ...current,
+          ...parsedDraft,
+          utilities: { ...current.utilities, ...(parsedDraft.utilities || {}) },
+          polygon_points: Array.isArray(parsedDraft.polygon_points) ? parsedDraft.polygon_points : current.polygon_points
+        }))
+        setDraftRestored(true)
+      }
+    } catch {
+      localStorage.removeItem(draftKey)
+    } finally {
+      setDraftLoaded(true)
+    }
+  }, [draftKey])
+
+  useEffect(() => {
+    if (!draftLoaded) return
+    try {
+      localStorage.setItem(draftKey, JSON.stringify(form))
+    } catch {
+      // Draft saving is helpful but must never block listing submission.
+    }
+  }, [draftKey, draftLoaded, form])
+
+  useEffect(() => {
+    if (formErrors.length > 0) errorSummaryRef.current?.focus()
+  }, [formErrors])
 
   const updateField = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -211,9 +286,12 @@ export default function CreateListingForm({ onSubmit, initialBranch = '', initia
       alert('Please enter a valid latitude and longitude first.')
       return
     }
+    setMapCityFocus(null)
     setForm((prev) => ({
       ...prev,
       polygon_points: [...prev.polygon_points, [lat, lng]],
+      boundary_point_colors: [...(prev.boundary_point_colors || []), pointColor],
+      boundary_point_sizes: [...(prev.boundary_point_sizes || []), pointSize],
       latitude: '',
       longitude: ''
     }))
@@ -222,15 +300,89 @@ export default function CreateListingForm({ onSubmit, initialBranch = '', initia
   const removePolygonPoint = (index) => {
     setForm((prev) => ({
       ...prev,
-      polygon_points: prev.polygon_points.filter((_, i) => i !== index)
+      polygon_points: prev.polygon_points.filter((_, i) => i !== index),
+      boundary_point_colors: (prev.boundary_point_colors || []).filter((_, i) => i !== index),
+      boundary_point_sizes: (prev.boundary_point_sizes || []).filter((_, i) => i !== index)
     }))
   }
 
   const addMapPolygonPoint = ([latitude, longitude]) => {
+    setMapCityFocus(null)
     setForm((prev) => ({
       ...prev,
-      polygon_points: [...prev.polygon_points, [latitude, longitude]]
+      polygon_points: [...prev.polygon_points, [latitude, longitude]],
+      boundary_point_colors: [...(prev.boundary_point_colors || []), pointColor],
+      boundary_point_sizes: [...(prev.boundary_point_sizes || []), pointSize]
     }))
+  }
+
+  const handleMapCityChange = (cityName) => {
+    setMapCity(cityName)
+    const city = MINDANAO_CITIES.find((item) => item.name === cityName)
+    setMapCityFocus(city ? { center: city.center, zoom: 13 } : null)
+  }
+
+  const handleBranchChange = (branch) => {
+    const normalizedBranch = normalizeBranchName(branch)
+    updateField('branch', normalizedBranch)
+    const center = BRANCH_COORDINATES[normalizedBranch]
+    setMapCity('')
+    setMapCityFocus(center ? { center, zoom: BRANCH_ZOOM } : null)
+  }
+
+  const searchMapLocation = async (event) => {
+    event?.preventDefault()
+    const query = mapSearchQuery.trim()
+    if (query.length < 3) {
+      setMapSearchResults([])
+      setMapSearchError('Enter at least 3 characters to search.')
+      return
+    }
+
+    setMapSearchLoading(true)
+    setMapSearchError('')
+    setMapSearchResults([])
+
+    try {
+      const params = new URLSearchParams({
+        format: 'jsonv2',
+        q: `${query}, Mindanao, Philippines`,
+        addressdetails: '1',
+        countrycodes: 'ph',
+        bounded: '1',
+        viewbox: '119.0,10.8,126.9,4.5',
+        limit: '5'
+      })
+      const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
+        headers: { Accept: 'application/json' }
+      })
+      if (!response.ok) throw new Error('Search service unavailable')
+
+      const results = (await response.json()).filter((result) => {
+        const lat = Number(result.lat)
+        const lon = Number(result.lon)
+        return lat >= 4.5 && lat <= 10.8 && lon >= 119.0 && lon <= 126.9
+      })
+
+      if (results.length === 0) {
+        setMapSearchError('No Mindanao locations found. Try a street name with its city.')
+      } else {
+        setMapSearchResults(results)
+      }
+    } catch {
+      setMapSearchError('Map search is temporarily unavailable. You can still use the city list or latitude/longitude fields.')
+    } finally {
+      setMapSearchLoading(false)
+    }
+  }
+
+  const selectMapSearchResult = (result) => {
+    const center = [Number(result.lat), Number(result.lon)]
+    setMapSearchQuery(result.display_name)
+    setMapSearchResults([])
+    setMapSearchError('')
+    setMapCity('')
+    setMapCityFocus({ center, zoom: 17 })
   }
 
   const MAX_PHOTOS = 10
@@ -269,33 +421,116 @@ export default function CreateListingForm({ onSubmit, initialBranch = '', initia
     })
   }
 
+  const validateForm = () => {
+    const errors = []
+    const area = Number(form.area_sqm)
+    const price = Number(numericAmount(form.total_contract_price))
+    const reservationFee = Number(numericAmount(form.reservation_fee))
+    const downPayment = Number(form.minimum_down_payment_pct)
+    const monthlyPayment = Number(numericAmount(form.monthly_payment_amount))
+    const penalty = Number(form.penalty_rate_pct)
+
+    if (!form.title.trim()) errors.push('Enter a listing title.')
+    if (!form.branch) errors.push('Select the branch responsible for this listing.')
+    if (!form.location_text.trim()) errors.push('Enter the specific land location.')
+    if (!Number.isFinite(area) || area <= 0) errors.push('Area must be greater than 0 sqm.')
+    if (!form.zoning_classification) errors.push('Select a zoning classification.')
+    if (!form.land_title_status) errors.push('Select the land title status.')
+    if (!Number.isFinite(price) || price <= 0) errors.push('Enter a contract price greater than 0.')
+    if (!Number.isFinite(reservationFee) || reservationFee < 0) errors.push('Enter a valid reservation fee.')
+    if (Number.isFinite(price) && Number.isFinite(reservationFee) && reservationFee > price) {
+      errors.push('Reservation fee cannot be greater than the contract price.')
+    }
+    if (!Number.isFinite(downPayment) || downPayment < 1 || downPayment > 40) {
+      errors.push('Minimum down payment must be between 1% and 40%.')
+    }
+    if (!Number.isFinite(monthlyPayment) || monthlyPayment < 0) errors.push('Enter a valid monthly payment amount.')
+    if (!Number.isFinite(penalty) || penalty < 0 || penalty > 100) errors.push('Late payment penalty must be between 0% and 100%.')
+    if (!form.terrain_topography) errors.push('Select the terrain topography.')
+    if (!form.lot_configuration) errors.push('Select the lot configuration.')
+    if (form.polygon_points.length > 0 && form.polygon_points.length < 3) {
+      errors.push('Add at least 3 boundary points, or remove the incomplete boundary.')
+    }
+
+    return errors
+  }
+
+  const clearDraft = () => {
+    localStorage.removeItem(draftKey)
+    setDraftRestored(false)
+  }
+
   const handleSubmit = (e) => {
     e.preventDefault()
 
-    if (form.polygon_points.length > 0 && form.polygon_points.length < 3) {
-      alert('Add at least 3 polygon boundary points, or remove the points to submit without a boundary.')
+    const errors = validateForm()
+    setFormErrors(errors)
+    if (errors.length > 0) {
       return
     }
+
+    setConfirmation({ type: 'submit' })
+  }
+
+  const submitListing = () => {
+    setConfirmation(null)
 
     const polygon_geojson = form.polygon_points.length >= 3
       ? {
           type: 'Polygon',
-          coordinates: [[...form.polygon_points, form.polygon_points[0]].map(([lat, lng]) => [lng, lat])]
+          coordinates: [[...form.polygon_points, form.polygon_points[0]].map(([lat, lng]) => [lng, lat])],
+          properties: {
+            ...(initialData?.polygon_geojson?.properties || {}),
+            point_colors: form.boundary_point_colors || [],
+            point_sizes: form.boundary_point_sizes || []
+          }
         }
       : null
 
     const payload = {
       ...form,
+      total_contract_price: numericAmount(form.total_contract_price),
+      reservation_fee: numericAmount(form.reservation_fee),
+      monthly_payment_amount: numericAmount(form.monthly_payment_amount),
       polygon_geojson,
-      photos
+      photos,
+      _draftKey: draftKey
     }
 
     console.log('CreateListingForm payload:', payload)
     onSubmit?.(payload)
   }
 
+  const confirmReset = () => {
+    setConfirmation(null)
+    clearDraft()
+    setForm(isEdit ? buildInitialState() : { ...buildInitialState(), branch: normalizeBranchName(initialBranch || '') })
+    setFormErrors([])
+  }
+
   return (
     <form onSubmit={handleSubmit} className="space-y-6 max-w-6xl mx-auto">
+      {draftRestored && (
+        <div className="flex items-start justify-between gap-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          <div>
+            <p className="font-semibold">Saved draft restored</p>
+            <p className="text-xs mt-0.5 text-emerald-700">Your text, financial details, and map points were recovered. Uploaded files need to be selected again.</p>
+          </div>
+          <button type="button" onClick={clearDraft} className="shrink-0 text-xs font-semibold text-emerald-800 underline hover:text-emerald-950">
+            Discard draft
+          </button>
+        </div>
+      )}
+
+      {formErrors.length > 0 && (
+        <div ref={errorSummaryRef} tabIndex="-1" role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 outline-none">
+          <p className="font-bold">Please correct the following before submitting:</p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs">
+            {formErrors.map((error) => <li key={error}>{error}</li>)}
+          </ul>
+        </div>
+      )}
+
       {/* Basic Information */}
       <SectionCard icon={MapPin} title="Basic Information">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -322,10 +557,16 @@ export default function CreateListingForm({ onSubmit, initialBranch = '', initia
             <Label required>Branch</Label>
             <Select
               value={form.branch}
-              onChange={(e) => updateField('branch', e.target.value)}
-              options={BRANCHES}
+              onChange={(e) => handleBranchChange(e.target.value)}
+              options={BRANCHES.map((branch) => ({ value: branch, label: displayBranchName(branch) }))}
               placeholder="Select branch"
+              disabled={branchLocked}
             />
+            {branchLocked && (
+              <p className="mt-1.5 text-xs text-slate-500">
+                Your seller account is assigned to {displayBranchName(initialBranch)}. Listings can only be created in this branch.
+              </p>
+            )}
           </div>
           <div>
             <Label required>Specific Location Text</Label>
@@ -380,12 +621,45 @@ export default function CreateListingForm({ onSubmit, initialBranch = '', initia
               <Plus className="w-4 h-4" /> Add Point
             </button>
 
+            <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <span className="mr-1 text-xs font-semibold text-slate-600">Point color:</span>
+              {BOUNDARY_POINT_COLORS.map((color) => (
+                <button
+                  key={color.value}
+                  type="button"
+                  onClick={() => setPointColor(color.value)}
+                  title={color.name}
+                  aria-label={`Use ${color.name} for the next boundary point`}
+                  aria-pressed={pointColor === color.value}
+                  className={`h-7 w-7 rounded-full border-2 transition hover:scale-110 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-1 ${pointColor === color.value ? 'border-slate-900 ring-2 ring-emerald-200' : 'border-white'}`}
+                  style={{ backgroundColor: color.value }}
+                />
+              ))}
+              <span className="text-[11px] text-slate-500">Applies to the next point</span>
+              <span className="mx-1 h-5 w-px bg-slate-300" aria-hidden="true" />
+              <span className="mr-1 text-xs font-semibold text-slate-600">Point size:</span>
+              {BOUNDARY_POINT_SIZES.map((size) => (
+                <button
+                  key={size.value}
+                  type="button"
+                  onClick={() => setPointSize(size.value)}
+                  title={size.name}
+                  aria-label={`Use ${size.name} point size for the next boundary point`}
+                  aria-pressed={pointSize === size.value}
+                  className={`inline-flex h-7 w-7 items-center justify-center rounded-full border text-[11px] font-bold transition hover:scale-110 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-1 ${pointSize === size.value ? 'border-slate-900 bg-white text-slate-900 ring-2 ring-emerald-200' : 'border-slate-300 bg-white text-slate-500'}`}
+                >
+                  {size.label}
+                </button>
+              ))}
+            </div>
+
             {form.polygon_points.length > 0 && (
               <div className="mt-4 flex flex-wrap gap-2">
                 {form.polygon_points.map(([lat, lng], idx) => (
                   <div
                     key={idx}
-                    className="inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-50 text-emerald-800 rounded-full text-xs font-medium"
+                    className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium"
+                    style={{ backgroundColor: BOUNDARY_POINT_COLORS.find((color) => color.value === (form.boundary_point_colors?.[idx] || DEFAULT_BOUNDARY_POINT_COLOR))?.swatch || '#d1fae5', color: '#14532d' }}
                   >
                     P{idx + 1}: {lat.toFixed(5)}, {lng.toFixed(5)}
                     <button
@@ -406,12 +680,89 @@ export default function CreateListingForm({ onSubmit, initialBranch = '', initia
               <span className="text-xs font-medium text-emerald-700">{form.polygon_points.length} point{form.polygon_points.length === 1 ? '' : 's'} added</span>
             </div>
             <p className="text-xs text-slate-500 mb-3">Click anywhere on the map to drop a boundary point, or type lat/lng above and press Add Point. You can add 3 or more points to draw any shape — triangle, square, pentagon, hexagon, etc. There is no maximum point limit.</p>
-            <MapView
-              listings={[]}
-              height="320px"
-              boundaryPoints={form.polygon_points}
-              onAddBoundaryPoint={addMapPolygonPoint}
-            />
+            <div className="mb-3 rounded-xl border border-emerald-100 bg-emerald-50/60 p-3">
+              <label htmlFor="gis-city-navigator" className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-emerald-800">
+                Quick map navigation
+              </label>
+              <div
+                role="search"
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') searchMapLocation(event)
+                }}
+                className="flex flex-col gap-2 sm:flex-row sm:items-center"
+              >
+                <div className="flex min-w-0 flex-1 gap-2">
+                  <div className="relative min-w-0 flex-1">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-emerald-600" />
+                    <input
+                      value={mapSearchQuery}
+                      onChange={(e) => { setMapSearchQuery(e.target.value); setMapSearchError(''); setMapSearchResults([]) }}
+                      placeholder="Search a street, avenue, road, or landmark"
+                      aria-label="Search a Mindanao street, avenue, road, or landmark"
+                      className="w-full rounded-lg border border-emerald-200 bg-white py-2.5 pl-9 pr-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => searchMapLocation()}
+                    disabled={mapSearchLoading}
+                    className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-2.5 text-sm font-bold text-white transition hover:bg-emerald-800 disabled:cursor-wait disabled:opacity-70"
+                  >
+                    {mapSearchLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                    <span className="hidden sm:inline">Search</span>
+                  </button>
+                </div>
+                <select
+                  id="gis-city-navigator"
+                  value={mapCity}
+                  onChange={(e) => handleMapCityChange(e.target.value)}
+                  className="w-full appearance-none rounded-lg border border-emerald-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 sm:max-w-md"
+                >
+                  <option value="">Jump to a Mindanao city…</option>
+                  {MINDANAO_CITIES.map((city) => (
+                    <option key={city.name} value={city.name}>{city.name}</option>
+                  ))}
+                </select>
+              </div>
+              <p className="mt-2 text-[11px] text-slate-500">Search is limited to Mindanao and only moves the map. It does not save a boundary until you click the map or add coordinates. Search powered by OpenStreetMap Nominatim.</p>
+              {mapSearchError && <p role="status" className="mt-2 text-xs font-semibold text-red-700">{mapSearchError}</p>}
+              {mapSearchResults.length > 0 && (
+                <div className="mt-2 overflow-hidden rounded-lg border border-emerald-200 bg-white shadow-sm">
+                  {mapSearchResults.map((result) => (
+                    <button
+                      key={`${result.place_id}-${result.lat}-${result.lon}`}
+                      type="button"
+                      onClick={() => selectMapSearchResult(result)}
+                      className="block w-full border-b border-slate-100 px-3 py-2.5 text-left text-xs text-slate-700 transition last:border-b-0 hover:bg-emerald-50 focus:bg-emerald-50 focus:outline-none"
+                    >
+                      <span className="block font-semibold text-slate-900">{result.name || result.display_name.split(',')[0]}</span>
+                      <span className="mt-0.5 block truncate text-slate-500">{result.display_name}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className={mapExpanded ? 'fixed inset-4 z-[80] rounded-2xl border-2 border-emerald-200 bg-white p-2 shadow-2xl sm:inset-8' : 'relative h-[320px]'}>
+              <button
+                type="button"
+                onClick={() => setMapExpanded((expanded) => !expanded)}
+                title={mapExpanded ? 'Close expanded map' : 'Expand map'}
+                aria-label={mapExpanded ? 'Close expanded map' : 'Expand map'}
+                className="absolute left-3 top-3 z-[1001] inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white/95 text-emerald-800 shadow-lg backdrop-blur transition hover:bg-emerald-50 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+              >
+                {mapExpanded ? <Minimize2 className="h-5 w-5" /> : <Maximize2 className="h-5 w-5" />}
+              </button>
+              <MapView
+                listings={[]}
+                height="100%"
+                flyTo={mapCityFocus}
+                boundaryPoints={form.polygon_points}
+                boundaryPointColors={form.boundary_point_colors}
+                boundaryPointSizes={form.boundary_point_sizes}
+                onAddBoundaryPoint={addMapPolygonPoint}
+                initialSatellite={false}
+              />
+            </div>
           </div>
         </div>
       </SectionCard>
@@ -466,10 +817,11 @@ export default function CreateListingForm({ onSubmit, initialBranch = '', initia
           <div>
             <Label required>Total Contract Price (PHP)</Label>
             <Input
-              type="number"
-              value={form.total_contract_price}
-              onChange={(e) => updateField('total_contract_price', e.target.value)}
-              placeholder="e.g. 2500000"
+              type="text"
+              inputMode="decimal"
+              value={formatAmount(form.total_contract_price)}
+              onChange={(e) => updateField('total_contract_price', formatAmount(e.target.value))}
+              placeholder="e.g. 2,500,000"
               required
               min={0}
               step={0.01}
@@ -478,10 +830,11 @@ export default function CreateListingForm({ onSubmit, initialBranch = '', initia
           <div>
             <Label required>Required Reservation Fee (PHP)</Label>
             <Input
-              type="number"
-              value={form.reservation_fee}
-              onChange={(e) => updateField('reservation_fee', e.target.value)}
-              placeholder="e.g. 25000"
+              type="text"
+              inputMode="decimal"
+              value={formatAmount(form.reservation_fee)}
+              onChange={(e) => updateField('reservation_fee', formatAmount(e.target.value))}
+              placeholder="e.g. 25,000"
               required
               min={0}
               step={0.01}
@@ -503,10 +856,11 @@ export default function CreateListingForm({ onSubmit, initialBranch = '', initia
           <div>
             <Label required>Monthly Payment Amount (PHP)</Label>
             <Input
-              type="number"
-              value={form.monthly_payment_amount}
-              onChange={(e) => updateField('monthly_payment_amount', e.target.value)}
-              placeholder="e.g. 15000"
+              type="text"
+              inputMode="decimal"
+              value={formatAmount(form.monthly_payment_amount)}
+              onChange={(e) => updateField('monthly_payment_amount', formatAmount(e.target.value))}
+              placeholder="e.g. 15,000"
               required
               min={0}
               step={0.01}
@@ -639,7 +993,7 @@ export default function CreateListingForm({ onSubmit, initialBranch = '', initia
       <div className="flex items-center justify-end gap-4 pt-4">
         <button
           type="button"
-          onClick={() => isEdit ? setForm(buildInitialState()) : setForm({ ...form, title: '', description: '', location_text: '', area_sqm: '', latitude: '', longitude: '', polygon_points: [] })}
+          onClick={() => setConfirmation({ type: 'reset' })}
           className="px-6 py-3 text-sm font-semibold text-slate-600 hover:text-slate-800 transition"
         >
           {isEdit ? 'Revert Changes' : 'Reset'}
@@ -651,6 +1005,18 @@ export default function CreateListingForm({ onSubmit, initialBranch = '', initia
           <Check className="w-4 h-4" /> {isEdit ? 'Save Changes' : 'Submit Listing'}
         </button>
       </div>
+
+      <ConfirmDialog
+        open={Boolean(confirmation)}
+        title={confirmation?.type === 'reset' ? 'Clear this listing form?' : (isEdit ? 'Save listing changes?' : 'Submit listing for review?')}
+        message={confirmation?.type === 'reset'
+          ? (isEdit ? 'This will discard your current edits and restore the last saved listing.' : 'This will clear the form and remove the saved draft from this browser.')
+          : (isEdit ? 'Your changes will be saved to this listing. You can still edit it later.' : 'The listing will be sent for review and saved in Terrava.')}
+        confirmLabel={confirmation?.type === 'reset' ? 'Clear form' : (isEdit ? 'Save changes' : 'Submit listing')}
+        tone={confirmation?.type === 'reset' ? 'danger' : 'brand'}
+        onCancel={() => setConfirmation(null)}
+        onConfirm={confirmation?.type === 'reset' ? confirmReset : submitListing}
+      />
     </form>
   )
 }

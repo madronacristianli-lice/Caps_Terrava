@@ -1,4 +1,5 @@
 const db = require('../models');
+const { createNotification } = require('./notificationController');
 
 exports.create = async (req, res) => {
   try {
@@ -10,6 +11,17 @@ exports.create = async (req, res) => {
       buyer_id: req.user.id,
       message
     });
+
+    if (listing.seller_id) {
+      await createNotification({
+        user_id: listing.seller_id,
+        title: `New message about ${listing.title}`,
+        message: 'A buyer sent a message about your listing. Open Messages to reply.',
+        type: 'system',
+        data: { category: 'message', inquiry_id: inquiry.id, listing_id: listing.id }
+      });
+    }
+
     res.json(inquiry);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -80,6 +92,15 @@ exports.reply = async (req, res) => {
       return res.status(403).json({ error: 'Forbidden' });
     }
     await inquiry.update({ reply: req.body.reply, is_read: true });
+
+    await createNotification({
+      user_id: inquiry.buyer_id,
+      title: `Reply about ${inquiry.listing.title}`,
+      message: 'The seller replied to your message. Open Messages to view the response.',
+      type: 'system',
+      data: { category: 'message', inquiry_id: inquiry.id, listing_id: inquiry.listing.id }
+    });
+
     res.json(inquiry);
   } catch (error) {
     res.status(500).json({ error: error.message });

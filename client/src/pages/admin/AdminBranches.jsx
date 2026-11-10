@@ -1,14 +1,15 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useToast } from '../../context/ToastContext.jsx'
 import api from '../../api/api.js'
-import Spinner from '../../components/Spinner.jsx'
 import EmptyState from '../../components/EmptyState.jsx'
+import useAutoRefresh from '../../hooks/useAutoRefresh.js'
 import {
   Store, LayoutList, Users, CreditCard, Clock,
   TrendingUp, MapPin, BarChart3,
   CheckCircle2, AlertCircle, ArrowUpRight,
   Search, RefreshCw
 } from 'lucide-react'
+import { displayBranchName } from '../../utils/branches.js'
 import PesoIcon from '../../components/PesoIcon.jsx'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -31,21 +32,33 @@ export default function AdminBranches() {
   const [listings, setListings] = useState([])
   const [transactions, setTransactions] = useState([])
   const [users, setUsers] = useState([])
-  const [loading, setLoading] = useState(true)
   const [activeBranch, setActiveBranch] = useState('Main Tagum')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [refreshing, setRefreshing] = useState(false)
+  const [lastUpdated, setLastUpdated] = useState(null)
 
-  useEffect(() => {
-    setLoading(true)
-    Promise.all([
-      api.get('/listings?all=true').then((res) => setListings(res.data)),
-      api.get('/transactions').then((res) => setTransactions(res.data)),
-      api.get('/admin/users').then((res) => setUsers(res.data))
-    ])
-      .catch(() => addToast('Failed to load branch data', 'error'))
-      .finally(() => setLoading(false))
+  const fetchBranchData = useCallback(async () => {
+    setRefreshing(true)
+    try {
+      const [listingResponse, transactionResponse, userResponse] = await Promise.all([
+        api.get('/listings?all=true'),
+        api.get('/transactions'),
+        api.get('/admin/users?archived=false')
+      ])
+      setListings(listingResponse.data)
+      setTransactions(transactionResponse.data)
+      setUsers(userResponse.data)
+      setLastUpdated(new Date())
+    } catch {
+      addToast('Failed to load branch data', 'error')
+    } finally {
+      setRefreshing(false)
+    }
   }, [addToast])
+
+  // Keep branch performance and payment accountability current while the page is open.
+  useAutoRefresh(fetchBranchData, [], 30000)
 
   const getBranch = (item) => {
     if (item?.branch) return item.branch
@@ -59,10 +72,16 @@ export default function AdminBranches() {
     return 'Other'
   }
 
+  const getTransactionBranch = (transaction) => (
+    transaction?.recorder?.branch ||
+    transaction?.branch ||
+    getBranch(transaction?.listing || {})
+  )
+
   const branchData = useMemo(() => {
     return BRANCHES.map(({ name, hours, color, manager }) => {
       const branchListings = listings.filter((l) => getBranch(l) === name)
-      const branchTransactions = transactions.filter((t) => getBranch(t.listing || {}) === name)
+      const branchTransactions = transactions.filter((t) => getTransactionBranch(t) === name)
       const branchSales = branchTransactions.reduce((sum, t) => sum + Number(t.amount), 0)
       const branchUsers = users.filter((u) => u.branch === name).length
       const totalLots = branchListings.length
@@ -102,7 +121,7 @@ export default function AdminBranches() {
 
   const activeTransactions = useMemo(() => {
     return transactions
-      .filter((t) => getBranch(t.listing || {}) === activeBranch)
+      .filter((t) => getTransactionBranch(t) === activeBranch)
       .sort((a, b) => new Date(b.created_at || b.createdAt) - new Date(a.created_at || a.createdAt))
   }, [transactions, activeBranch])
 
@@ -110,48 +129,44 @@ export default function AdminBranches() {
     return branchData.map((b) => ({ name: b.branch.replace('Main ', ''), sales: b.sales, color: b.color }))
   }, [branchData])
 
-  const handleRefresh = () => {
-    setLoading(true)
-    Promise.all([
-      api.get('/listings?all=true').then((res) => setListings(res.data)),
-      api.get('/transactions').then((res) => setTransactions(res.data)),
-      api.get('/admin/users').then((res) => setUsers(res.data))
-    ])
-      .catch(() => addToast('Failed to refresh branch data', 'error'))
-      .finally(() => setLoading(false))
-  }
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-emerald-50/30">
-        <Spinner size="lg" />
-      </div>
-    )
+  const handleRefresh = async () => {
+    await fetchBranchData()
   }
 
   return (
-    <div className="min-h-screen bg-emerald-50/30 overflow-x-hidden">
-      {/* Header */}
-      <header className="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-emerald-100 px-4 sm:px-6 py-[22px] shadow-sm">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-extrabold text-gray-900 leading-tight">Branch Monitoring</h1>
-              <p className="text-xs text-gray-500 mt-1">Real-time activity across Main Tagum, Panabo, and Sto. Tomas.</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleRefresh}
-                className="inline-flex items-center gap-1.5 h-9 px-3 rounded-xl text-xs font-bold bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50 transition"
-              >
-                <RefreshCw className="w-3.5 h-3.5" /> Refresh
-              </button>
-            </div>
-          </div>
-        </header>
-
-        {/* Content */}
-        <main className="flex-1 p-4 md:p-8 overflow-auto">
-          <div className="max-w-7xl mx-auto space-y-6">
+    <div className="space-y-6 p-6 md:p-8">
+      <div className="mx-auto max-w-7xl space-y-6">
+            {/* Page intro */}
+            <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-950 via-emerald-800 to-teal-700 px-6 py-7 text-white shadow-xl shadow-emerald-900/10 md:px-8">
+              <div className="absolute -right-16 -top-20 h-56 w-56 rounded-full bg-white/10 blur-2xl" />
+              <div className="relative flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-emerald-300/30 bg-white/10 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-emerald-100">
+                    <span className="h-2 w-2 rounded-full bg-emerald-300 shadow-[0_0_0_4px_rgba(110,231,183,0.15)]" /> Live branch view
+                  </div>
+                  <h2 className="text-2xl font-extrabold tracking-tight md:text-3xl">Branch performance at a glance</h2>
+                  <p className="mt-2 max-w-2xl text-sm leading-relaxed text-emerald-100">
+                    Review listings, payment activity, verification workload, and branch accountability across Terrava.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="rounded-2xl border border-white/15 bg-white/10 px-4 py-3 backdrop-blur-sm">
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-200">Last updated</p>
+                    <p className="mt-1 text-sm font-bold text-white">
+                      {lastUpdated ? lastUpdated.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'Updating…'}
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleRefresh}
+                    disabled={refreshing}
+                    className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-bold text-emerald-800 shadow-lg transition hover:bg-emerald-50 disabled:cursor-wait disabled:opacity-70"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+                    {refreshing ? 'Updating…' : 'Refresh data'}
+                  </button>
+                </div>
+              </div>
+            </section>
 
             {/* Branch cards */}
             <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -175,7 +190,7 @@ export default function AdminBranches() {
                             <Store className="w-5 h-5" />
                           </div>
                           <div>
-                            <h3 className="font-bold text-gray-900">{b.branch}</h3>
+                            <h3 className="font-bold text-gray-900">{displayBranchName(b.branch)}</h3>
                             <p className="text-[10px] text-gray-500 flex items-center gap-1 mt-0.5">
                               <Clock className="w-3 h-3" /> {b.hours}
                             </p>
@@ -277,7 +292,7 @@ export default function AdminBranches() {
 
               <div className="bg-white rounded-2xl shadow-card border border-gray-100 p-6">
                 <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2 mb-4">
-                  <Store className="w-5 h-5 text-emerald-600" /> {activeBranch}
+                  <Store className="w-5 h-5 text-emerald-600" /> {displayBranchName(activeBranch)}
                 </h2>
                 <div className="space-y-4">
                   <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-100">
@@ -308,8 +323,8 @@ export default function AdminBranches() {
               {/* Listings */}
               <div className="bg-white rounded-2xl shadow-card border border-gray-100 p-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-                  <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                    <LayoutList className="w-5 h-5 text-emerald-600" /> {activeBranch} Listings
+                          <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                            <LayoutList className="w-5 h-5 text-emerald-600" /> {displayBranchName(activeBranch)} Listings
                   </h2>
                   <div className="flex items-center gap-2">
                     <div className="relative">
@@ -336,7 +351,7 @@ export default function AdminBranches() {
                 </div>
 
                 {activeListings.length === 0 ? (
-                  <EmptyState title="No listings found" message={`No listings match your filters for ${activeBranch}.`} />
+                  <EmptyState title="No listings found" message={`No listings match your filters for ${displayBranchName(activeBranch)}.`} />
                 ) : (
                   <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
                     {activeListings.map((l) => (
@@ -373,14 +388,14 @@ export default function AdminBranches() {
               {/* Transactions */}
               <div className="bg-white rounded-2xl shadow-card border border-gray-100 p-6">
                 <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                    <CreditCard className="w-5 h-5 text-emerald-600" /> {activeBranch} Transactions
+                          <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                            <CreditCard className="w-5 h-5 text-emerald-600" /> {displayBranchName(activeBranch)} Transactions
                   </h2>
                   <span className="text-xs font-bold text-gray-500">{activeTransactions.length} total</span>
                 </div>
 
                 {activeTransactions.length === 0 ? (
-                  <EmptyState title="No transactions" message={`No transactions recorded for ${activeBranch}.`} />
+                  <EmptyState title="No transactions" message={`No transactions recorded for ${displayBranchName(activeBranch)}.`} />
                 ) : (
                   <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
                     {activeTransactions.map((t) => (
@@ -408,8 +423,7 @@ export default function AdminBranches() {
                 )}
               </div>
             </section>
-          </div>
-        </main>
+      </div>
     </div>
   )
 }

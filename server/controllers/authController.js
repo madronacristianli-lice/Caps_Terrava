@@ -3,6 +3,9 @@ const fs = require('fs');
 const path = require('path');
 const { hashPassword, comparePassword } = require('../utils/password');
 const { generateToken, generateLedgerToken } = require('../utils/jwt');
+const crypto = require('crypto');
+const { sendOtpSms } = require('../services/textbee');
+const { OAuth2Client } = require('google-auth-library');
 
 const PROFILE_FIELDS = ['id', 'email', 'full_name', 'first_name', 'middle_name', 'last_name',
   'extension_name', 'role', 'phone', 'phone2', 'birthdate', 'address', 'branch',
@@ -52,6 +55,40 @@ const validatePassword = (pwd) => {
   return '';
 };
 
+const otpHash = (code) => crypto.createHash('sha256').update(`${code}:${process.env.JWT_SECRET}`).digest('hex');
+const normalizePhone = (phone) => {
+  const raw = String(phone || '').replace(/[\s()-]/g, '');
+  if (raw.startsWith('+63')) return `+63${raw.slice(3).replace(/\D/g, '')}`;
+  if (raw.startsWith('0063')) return `+63${raw.slice(4).replace(/\D/g, '')}`;
+  if (raw.startsWith('0')) return `+63${raw.slice(1).replace(/\D/g, '')}`;
+  if (raw.startsWith('9')) return `+63${raw.replace(/\D/g, '')}`;
+  return raw;
+};
+
+const createPendingOtp = async (req) => {
+  const { email, password, full_name, first_name, middle_name, last_name,
+    extension_name, phone, phone2, birthdate, address, occupation,
+    spouse_first_name, spouse_middle_name, spouse_last_name, spouse_extension_name,
+    spouse_email, spouse_phone, spouse_occupation } = req.body;
+  if (!email || !phone || !full_name) throw new Error('Name, email, and phone are required');
+  const normalizedEmail = email.trim().toLowerCase();
+  const normalizedPhone = normalizePhone(phone);
+  if (!/^\+\d{10,15}$/.test(normalizedPhone)) throw new Error('Use an international phone number, e.g. +639171234567');
+  const existing = await db.User.findOne({ where: { email: normalizedEmail } });
+  if (existing) throw new Error('Email already registered');
+  const password_hash = await hashPassword(password);
+  const code = String(crypto.randomInt(100000, 1000000));
+  const existingOtp = await db.OtpVerification.findOne({ where: { email: normalizedEmail } });
+  const payload = { email: normalizedEmail, password_hash, full_name, first_name, middle_name, last_name,
+    extension_name, phone: normalizedPhone, phone2, birthdate, address, occupation,
+    spouse_first_name, spouse_middle_name, spouse_last_name, spouse_extension_name,
+    spouse_email, spouse_phone, spouse_occupation };
+  const values = { phone: normalizedPhone, email: normalizedEmail, code_hash: otpHash(code), payload,
+    expires_at: new Date(Date.now() + 5 * 60 * 1000), attempts: 0, last_sent_at: new Date() };
+  if (existingOtp) await existingOtp.update(values); else await db.OtpVerification.create(values);
+  await sendOtpSms(normalizedPhone, code);
+};
+
 exports.register = async (req, res) => {
   try {
     const { email, password, full_name, first_name, middle_name, last_name,
@@ -62,27 +99,51 @@ exports.register = async (req, res) => {
     const pwdError = validatePassword(password);
     if (pwdError) return res.status(400).json({ error: pwdError });
 
-    const existing = await db.User.findOne({ where: { email } });
-    if (existing) return res.status(400).json({ error: 'Email already registered' });
+    await createPendingOtp(req);
+    res.status(202).json({ message: 'Verification code sent', phone: normalizePhone(phone) });
+  } catch (error) {
+    res.status(error.message.includes('TextBee') ? 502 : 400).json({ error: error.message });
+  }
+};
 
-    const password_hash = await hashPassword(password);
-    const user = await db.User.create({
-      email, password_hash, full_name, first_name, middle_name, last_name,
-      extension_name, role: 'buyer', phone, phone2, birthdate, address, occupation,
-      spouse_first_name, spouse_middle_name, spouse_last_name, spouse_extension_name,
-      spouse_email, spouse_phone, spouse_occupation
-    });
+exports.verifyRegistration = async (req, res) => {
+  try {
+    const { email, code } = req.body;
+    const pending = await db.OtpVerification.findOne({ where: { email: String(email || '').trim().toLowerCase() } });
+    if (!pending) return res.status(400).json({ error: 'No pending verification found' });
+    if (new Date(pending.expires_at) < new Date()) return res.status(400).json({ error: 'OTP expired. Request a new code.' });
+    if (pending.attempts >= 5) return res.status(429).json({ error: 'Too many attempts. Request a new code.' });
+    if (otpHash(String(code || '').trim()) !== pending.code_hash) {
+      await pending.increment('attempts');
+      return res.status(400).json({ error: 'Incorrect OTP' });
+    }
+    const user = await db.User.create({ ...pending.payload, role: 'buyer' });
+    await pending.destroy();
     const token = generateToken({ id: user.id, email: user.email, role: user.role });
     res.json({ user: formatUser(user), token });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
+  } catch (error) { res.status(500).json({ error: error.message }); }
+};
+
+exports.resendRegistrationOtp = async (req, res) => {
+  try {
+    const pending = await db.OtpVerification.findOne({ where: { email: String(req.body.email || '').trim().toLowerCase() } });
+    if (!pending) return res.status(404).json({ error: 'No pending verification found' });
+    if (Date.now() - new Date(pending.last_sent_at).getTime() < 60000) return res.status(429).json({ error: 'Please wait 60 seconds before requesting another code' });
+    const code = String(crypto.randomInt(100000, 1000000));
+    await pending.update({ code_hash: otpHash(code), expires_at: new Date(Date.now() + 5 * 60 * 1000), attempts: 0, last_sent_at: new Date() });
+    await sendOtpSms(pending.phone, code);
+    res.json({ message: 'Verification code resent' });
+  } catch (error) { res.status(502).json({ error: error.message }); }
 };
 
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
-    const user = await db.User.findOne({ where: { email } });
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    if (!normalizedEmail || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+    const user = await db.User.findOne({ where: { email: normalizedEmail } });
     if (!user || !user.password_hash || !(await comparePassword(password, user.password_hash))) {
       return res.status(400).json({ error: 'Invalid email or password' });
     }

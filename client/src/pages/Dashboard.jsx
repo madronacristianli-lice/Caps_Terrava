@@ -2,13 +2,14 @@ import { useCallback, useEffect, useState } from 'react'
 import useAutoRefresh from '../hooks/useAutoRefresh.js'
 import { Link, Navigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
+import { useToast } from '../context/ToastContext.jsx'
 import api from '../api/api.js'
 import Spinner from '../components/Spinner.jsx'
 import EmptyState from '../components/EmptyState.jsx'
 import AssignBuyerModal from '../components/AssignBuyerModal.jsx'
 import RecordPaymentModal from '../components/RecordPaymentModal.jsx'
 import Avatar from '../components/Avatar.jsx'
-import { FileText, CreditCard, UserCheck, UserX, Eye, PlusCircle, Pencil, Home, BookmarkCheck, Receipt, ShieldCheck, Filter, ChevronDown, Search, X, AlertTriangle, Wallet, Clock, AlertCircle } from 'lucide-react'
+import { FileText, CreditCard, UserCheck, UserX, Eye, PlusCircle, Pencil, Home, BookmarkCheck, Receipt, ShieldCheck, Filter, ChevronDown, ChevronLeft, ChevronRight, Search, X, AlertTriangle, Wallet, Clock, AlertCircle } from 'lucide-react'
 
 const statusColors = {
   available: 'bg-green-100 text-green-700',
@@ -37,6 +38,13 @@ const statusCardStyles = {
   },
 }
 
+const pendingCardStyles = {
+  border: 'border-t-slate-400',
+  bg: 'bg-gradient-to-br from-slate-50 to-white',
+  icon: 'bg-slate-100 text-slate-600',
+  hover: 'hover:ring-slate-200',
+}
+
 const txStatusColors = {
   pending: 'bg-yellow-100 text-yellow-700',
   verified: 'bg-brand-100 text-brand-700',
@@ -57,6 +65,7 @@ const SectionHeader = ({ icon: Icon, title, action }) => (
 
 export default function Dashboard() {
   const { user } = useAuth()
+  const { addToast } = useToast()
   const [listings, setListings] = useState([])
   const [transactions, setTransactions] = useState([])
   const [installments, setInstallments] = useState([])
@@ -67,10 +76,12 @@ export default function Dashboard() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [verificationFilter, setVerificationFilter] = useState('all')
   const [search, setSearch] = useState('')
+  const [listingPage, setListingPage] = useState(1)
+  const listingsPerPage = 9
 
   const fetchListings = useCallback(() =>
     api.get('/listings?all=true').then((res) =>
-      setListings(res.data.filter((l) => l.seller_id === user.id))
+      setListings(res.data)
     ), [user])
 
   const fetchTransactions = useCallback(() =>
@@ -82,8 +93,12 @@ export default function Dashboard() {
   const fetchAll = useCallback(() => {
     const fetches = [fetchTransactions(), fetchInstallments()]
     if (user?.role === 'seller') fetches.push(fetchListings())
-    Promise.all(fetches).finally(() => setLoading(false))
-  }, [fetchListings, fetchTransactions, fetchInstallments, user])
+    Promise.all(fetches)
+      .catch((err) => {
+        addToast(err.response?.data?.error || 'Unable to refresh listing data. Please try again.', 'error')
+      })
+      .finally(() => setLoading(false))
+  }, [addToast, fetchListings, fetchTransactions, fetchInstallments, user])
 
   const openUnassignModal = (listing) => {
     if (hasPayments(listing.id)) {
@@ -110,7 +125,7 @@ export default function Dashboard() {
     }
   }
 
-  const hasPayments = (listingId) => transactions.some((t) => t.listing_id === listingId)
+  const hasPayments = (listingId) => transactions.some((t) => String(t.listing_id) === String(listingId))
 
   useAutoRefresh(fetchAll, [fetchAll], 30000)
 
@@ -126,6 +141,23 @@ export default function Dashboard() {
       (l.assignedBuyer?.full_name || '').toLowerCase().includes(q)
     return matchesStatus && matchesVerification && matchesSearch
   })
+
+  useEffect(() => {
+    setListingPage(1)
+  }, [search, statusFilter, verificationFilter, listings.length])
+
+  const listingPageCount = Math.max(1, Math.ceil(filteredListings.length / listingsPerPage))
+  const currentListingPage = Math.min(listingPage, listingPageCount)
+  const visibleListings = filteredListings.slice(
+    (currentListingPage - 1) * listingsPerPage,
+    currentListingPage * listingsPerPage
+  )
+
+  // The listings view uses all verified payments for shared payment progress,
+  // but "My Transactions" must only show payments collected by this seller.
+  const myRecordedTransactions = user?.role === 'seller'
+    ? transactions.filter((t) => String(t.recorded_by || t.recorder?.id) === String(user.id))
+    : transactions
 
   if (loading) return <div className="flex justify-center py-24"><Spinner size="lg" /></div>
   if (user?.role === 'admin') return <Navigate to="/admin" replace />
@@ -267,17 +299,44 @@ export default function Dashboard() {
               })()}
             />
           ) : (
+            <>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredListings.map((l) => (
-                <div key={l.id} className={`rounded-2xl shadow-card border border-gray-100 border-t-4 p-5 hover:shadow-card-hover transition-all duration-200 flex flex-col h-full ${statusCardStyles[l.status]?.bg || 'bg-white'} ${statusCardStyles[l.status]?.border || 'border-t-gray-400'}`}>
+              {visibleListings.map((l) => {
+                const isOwner = String(l.seller_id) === String(user.id)
+                // Seller listings are shared across branches so any authenticated
+                // seller can coordinate buyers and maintain the listing.
+                const canManage = user?.role === 'seller'
+                const isPendingReview = !l.is_verified
+                const cardStyle = isPendingReview ? pendingCardStyles : (statusCardStyles[l.status] || {})
+                const canRecordPayment = user?.role === 'seller'
+                const paidAmount = transactions
+                  .filter((t) => String(t.listing_id) === String(l.id) && t.status === 'verified')
+                  .reduce((sum, t) => sum + Number(t.amount || 0), 0)
+                const listingPrice = Number(l.price || 0)
+                const remainingAmount = Math.max(listingPrice - paidAmount, 0)
+                return (
+                <div key={l.id} className={`rounded-2xl shadow-card border border-gray-200 border-t-4 p-5 hover:shadow-card-hover transition-all duration-200 flex flex-col h-full ${cardStyle.bg || 'bg-white'} ${cardStyle.border || 'border-t-gray-400'}`}>
                   <div className="flex items-start justify-between gap-2 mb-3">
                     <h3 className="font-bold text-gray-900 line-clamp-1 flex-1">{l.title}</h3>
-                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full capitalize flex-shrink-0 ${statusColors[l.status] || 'bg-gray-100 text-gray-600'}`}>
-                      {l.status}
+                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full flex-shrink-0 ${isPendingReview ? 'bg-slate-200 text-slate-700' : (statusColors[l.status] || 'bg-gray-100 text-gray-600')}`}>
+                      {isPendingReview ? 'Pending Review' : l.status}
                     </span>
                   </div>
                   <p className="text-brand-600 font-extrabold text-lg">₱{Number(l.price).toLocaleString()}</p>
                   <p className="text-xs text-gray-400 mt-0.5">{l.area_sqm} sqm · {l.location_text}</p>
+
+                  {paidAmount > 0 && (
+                    <div className="mt-3 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2">
+                      <div className="flex items-center justify-between gap-2 text-xs">
+                        <span className="font-semibold text-blue-800">Payment progress</span>
+                        <span className="font-bold text-blue-900">{remainingAmount === 0 ? 'Fully paid' : 'In progress'}</span>
+                      </div>
+                      <div className="mt-1 flex items-center justify-between text-[11px] text-blue-700">
+                        <span>Paid: ₱{paidAmount.toLocaleString()}</span>
+                        <span>Remaining: ₱{remainingAmount.toLocaleString()}</span>
+                      </div>
+                    </div>
+                  )}
 
                   {l.assigned_buyer_id && l.assignedBuyer && (
                     <div className="mt-3 flex items-center gap-2 bg-brand-50 rounded-xl px-3 py-2 text-sm">
@@ -306,22 +365,22 @@ export default function Dashboard() {
                       className="flex items-center gap-1.5 text-xs font-semibold text-brand-600 border border-brand-200 hover:bg-brand-50 px-3 py-1.5 rounded-lg transition w-full justify-center">
                       <Eye className="w-3.5 h-3.5" /> View
                     </Link>
-                    {!hasPayments(l.id) ? (
-                      <Link to={`/edit-listing/${l.id}`}
+                    {canManage && !hasPayments(l.id) ? (
+                      <Link to={`/edit-listing/${l.id}`} state={{ from: '/dashboard' }}
                         className="flex items-center gap-1.5 text-xs font-semibold text-amber-600 border border-amber-200 hover:bg-amber-50 px-3 py-1.5 rounded-lg transition w-full justify-center">
                         <Pencil className="w-3.5 h-3.5" /> Edit
                       </Link>
                     ) : (
                       <div />
                     )}
-                    {l.status === 'available' && !l.assigned_buyer_id ? (
+                    {canManage && !isPendingReview && l.status === 'available' && !l.assigned_buyer_id ? (
                       <button
                         onClick={() => setAssignTarget(l)}
                         className="flex items-center gap-1.5 text-xs font-semibold text-white bg-brand-600 hover:bg-brand-700 px-3 py-1.5 rounded-lg transition w-full justify-center"
                       >
                         <UserCheck className="w-3.5 h-3.5" /> Assign
                       </button>
-                    ) : l.assigned_buyer_id ? (
+                    ) : canRecordPayment && l.assigned_buyer_id ? (
                       <button
                         onClick={() => setRecordTarget(l)}
                         className="flex items-center gap-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 px-3 py-1.5 rounded-lg transition w-full justify-center"
@@ -333,8 +392,41 @@ export default function Dashboard() {
                     )}
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
+            {filteredListings.length > listingsPerPage && (
+              <div className="mt-6 flex flex-col gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-gray-500">
+                  Showing <span className="font-bold text-gray-700">{(currentListingPage - 1) * listingsPerPage + 1}</span>
+                  {' '}to{' '}
+                  <span className="font-bold text-gray-700">{Math.min(currentListingPage * listingsPerPage, filteredListings.length)}</span>
+                  {' '}of <span className="font-bold text-gray-700">{filteredListings.length}</span> listings
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setListingPage((page) => Math.max(1, page - 1))}
+                    disabled={currentListingPage <= 1}
+                    className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 transition hover:border-brand-300 hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <ChevronLeft className="h-4 w-4" /> Previous
+                  </button>
+                  <span className="min-w-[5.5rem] text-center text-sm font-bold text-gray-700">
+                    Page {currentListingPage} of {listingPageCount}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setListingPage((page) => Math.min(listingPageCount, page + 1))}
+                    disabled={currentListingPage >= listingPageCount}
+                    className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 transition hover:border-brand-300 hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Next <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+            </>
           )}
         </section>
       )}
@@ -342,7 +434,7 @@ export default function Dashboard() {
       {/* Transactions */}
       <section>
         <SectionHeader icon={CreditCard} title="My Transactions" />
-        {transactions.length === 0 ? (
+        {myRecordedTransactions.length === 0 ? (
           <EmptyState title="No transactions" message="Payments you record will appear here." />
         ) : (
           <div className="bg-white rounded-2xl shadow-card border border-gray-100 overflow-hidden">
@@ -358,7 +450,7 @@ export default function Dashboard() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {transactions.map((t) => (
+                  {myRecordedTransactions.map((t) => (
                     <tr key={t.id} className="hover:bg-gray-50 transition">
                       <td className="px-5 py-4 font-medium text-gray-900">{t.listing?.title || '—'}</td>
                       <td className="px-5 py-4 font-bold text-brand-600">₱{Number(t.amount).toLocaleString()}</td>
@@ -448,6 +540,7 @@ export default function Dashboard() {
         <RecordPaymentModal
           listing={recordTarget}
           transactions={transactions}
+          paymentBranch={user?.branch}
           onClose={() => setRecordTarget(null)}
           onRecorded={() => {
             fetchAll()

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
-import { MapPin, LogOut, User, Menu, X, ChevronDown, LandPlot, BarChart3, Building2, Bell, Shield, Banknote, Info } from 'lucide-react'
+import { MapPin, LogOut, User, Menu, X, ChevronDown, ChevronLeft, ChevronRight, LandPlot, BarChart3, Building2, Bell, Shield, Banknote, Info } from 'lucide-react'
 import { useNotifications } from '../context/NotificationContext.jsx'
 import Avatar from '../components/Avatar.jsx'
 
@@ -13,6 +13,8 @@ export default function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
+  const [notificationPage, setNotificationPage] = useState(1)
+  const notificationsPerPage = 5
   const dropdownRef = useRef(null)
   const notifRef = useRef(null)
 
@@ -48,6 +50,17 @@ export default function Navbar() {
     if (el) el.scrollIntoView({ behavior: 'smooth' })
     setMobileOpen(false)
   }
+
+  useEffect(() => {
+    setNotificationPage(1)
+  }, [notifications.length])
+
+  const notificationPageCount = Math.max(1, Math.ceil(notifications.length / notificationsPerPage))
+  const currentNotificationPage = Math.min(notificationPage, notificationPageCount)
+  const visibleNotifications = notifications.slice(
+    (currentNotificationPage - 1) * notificationsPerPage,
+    currentNotificationPage * notificationsPerPage
+  )
 
   return (
     <nav className="bg-white border-b border-gray-100 shadow-sm sticky top-0 z-50">
@@ -109,7 +122,7 @@ export default function Navbar() {
                       {notifications.length === 0 ? (
                         <p className="px-4 py-6 text-sm text-gray-500 text-center">No notifications yet</p>
                       ) : (
-                        notifications.map((n) => (
+                        visibleNotifications.map((n) => (
                           <button
                             key={n.id}
                             onClick={() => {
@@ -150,9 +163,45 @@ export default function Navbar() {
                                   })()}
                                 </p>
                               </div>
+                              {!n.is_read && (
+                                <span className="mt-1 inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700" title="Unread notification">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
+                                  Unread
+                                </span>
+                              )}
                             </div>
                           </button>
                         ))
+                      )}
+                      {notifications.length > notificationsPerPage && (
+                        <div className="flex items-center justify-between gap-2 border-t border-gray-100 bg-gray-50/80 px-3 py-2">
+                          <p className="text-[10px] text-gray-500">
+                            {((currentNotificationPage - 1) * notificationsPerPage) + 1}-{Math.min(currentNotificationPage * notificationsPerPage, notifications.length)} of {notifications.length}
+                          </p>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setNotificationPage((page) => Math.max(1, page - 1))}
+                              disabled={currentNotificationPage <= 1}
+                              className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 transition hover:border-brand-300 hover:text-brand-700 disabled:cursor-not-allowed disabled:opacity-40"
+                              aria-label="Previous notifications"
+                            >
+                              <ChevronLeft className="h-3.5 w-3.5" />
+                            </button>
+                            <span className="min-w-[3.5rem] text-center text-[10px] font-bold text-gray-600">
+                              {currentNotificationPage} / {notificationPageCount}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setNotificationPage((page) => Math.min(notificationPageCount, page + 1))}
+                              disabled={currentNotificationPage >= notificationPageCount}
+                              className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 transition hover:border-brand-300 hover:text-brand-700 disabled:cursor-not-allowed disabled:opacity-40"
+                              aria-label="Next notifications"
+                            >
+                              <ChevronRight className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </div>
                       )}
                     </div>
                   )}

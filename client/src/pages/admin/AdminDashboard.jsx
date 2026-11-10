@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import useAutoRefresh from '../../hooks/useAutoRefresh.js'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useToast } from '../../context/ToastContext.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useNotifications } from '../../context/NotificationContext.jsx'
@@ -21,26 +21,43 @@ import {
   FileText, Building2, LayoutList, MapPin, Maximize, Tag, User, Store,
   Bell, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, LogOut, Settings, Plus,
   ExternalLink, Trophy, Clock, XCircle, Archive, RotateCcw, Image as ImageIcon,
-  Wallet
+  Wallet, Home, Wheat, Factory
 } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
   PieChart, Pie, Cell, Legend
 } from 'recharts'
 import { jsPDF } from 'jspdf'
+
+const LAND_CATEGORY_STYLES = {
+  Residential: { Icon: Home, color: '#2563eb', bg: '#dbeafe' },
+  Commercial: { Icon: Building2, color: '#d97706', bg: '#fef3c7' },
+  Agricultural: { Icon: Wheat, color: '#16a34a', bg: '#dcfce7' },
+  Industrial: { Icon: Factory, color: '#7c3aed', bg: '#ede9fe' },
+}
 import autoTable from 'jspdf-autotable'
 
 const TABS = [
   { key: 'overview', label: 'Overview Analytics', icon: LayoutDashboard },
   { key: 'lands', label: 'Land Inventory', icon: Map },
-  { key: 'mapview', label: 'Map View', icon: Globe },
+  { key: 'mapview', label: 'Map View Lists', icon: Globe },
   { key: 'users', label: 'User Directory', icon: Users },
+  { key: 'branches', label: 'Branch Monitoring', icon: Store },
   { key: 'transactions', label: 'Transactions', icon: CreditCard },
   { key: 'installments', label: 'Installment Accounts', icon: Wallet },
   { key: 'blockchain', label: 'Blockchain Ledger', icon: Link2 }
 ]
 
 const COLORS = ['#059669', '#10b981', '#34d399', '#6ee7b7', '#a7f3d0', '#064e3b']
+let adminDashboardCache = null
+
+const toArray = (value, key) => {
+  if (Array.isArray(value)) return value
+  if (key && Array.isArray(value?.[key])) return value[key]
+  return []
+}
+
+const displayBranch = (branch) => branch === 'Panabo' ? 'Panabo City' : branch
 
 function ProfileField({ label, value, wide = false }) {
   const hasValue = value !== null && value !== undefined && value !== ''
@@ -55,27 +72,64 @@ function ProfileField({ label, value, wide = false }) {
   )
 }
 
+function PaymentStatusRing({ label, count, amount, total, color, track }) {
+  const radius = 27
+  const circumference = 2 * Math.PI * radius
+  const progress = total > 0 ? Math.min(count / total, 1) : 0
+  const offset = circumference * (1 - progress)
+
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-gray-100 bg-white p-3 shadow-sm">
+      <div className="relative h-16 w-16 shrink-0">
+        <svg viewBox="0 0 64 64" className="h-16 w-16 -rotate-90" aria-hidden="true">
+          <circle cx="32" cy="32" r={radius} fill="none" stroke={track} strokeWidth="6" />
+          <circle
+            cx="32"
+            cy="32"
+            r={radius}
+            fill="none"
+            stroke={color}
+            strokeWidth="6"
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={offset}
+          />
+        </svg>
+        <span className="absolute inset-0 flex items-center justify-center text-xs font-extrabold text-gray-800">{count}</span>
+      </div>
+      <div className="min-w-0">
+        <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color }}>{label}</p>
+        <p className="mt-1 truncate text-sm font-extrabold text-gray-900">₱{Number(amount || 0).toLocaleString()}</p>
+        <p className="text-[10px] text-gray-500">{total > 0 ? Math.round((count / total) * 100) : 0}% of payments</p>
+      </div>
+    </div>
+  )
+}
+
 export default function AdminDashboard() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { addToast } = useToast()
   const { user, login, logout } = useAuth()
   const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications()
-  const [activeTab, setActiveTab] = useState('overview')
+  const [activeTab, setActiveTab] = useState(() => location.state?.tab || 'overview')
   const [profileOpen, setProfileOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
+  const [notificationPage, setNotificationPage] = useState(1)
+  const notificationsPerPage = 5
   const profileRef = useRef(null)
   const notifRef = useRef(null)
-  const [stats, setStats] = useState(null)
-  const [users, setUsers] = useState([])
-  const [chain, setChain] = useState([])
+  const [stats, setStats] = useState(() => adminDashboardCache?.stats || null)
+  const [users, setUsers] = useState(() => toArray(adminDashboardCache?.users, 'users'))
+  const [chain, setChain] = useState(() => adminDashboardCache?.chain || [])
   const [valid, setValid] = useState(null)
   const [contract, setContract] = useState(null)
-  const [listings, setListings] = useState([])
-  const [transactions, setTransactions] = useState([])
-  const [installments, setInstallments] = useState([])
+  const [listings, setListings] = useState(() => toArray(adminDashboardCache?.listings, 'listings'))
+  const [transactions, setTransactions] = useState(() => toArray(adminDashboardCache?.transactions, 'transactions'))
+  const [installments, setInstallments] = useState(() => toArray(adminDashboardCache?.installments, 'installments'))
   const [installmentFilter, setInstallmentFilter] = useState('all')
   const [installmentSearch, setInstallmentSearch] = useState('')
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(() => !adminDashboardCache)
   const [userFilter, setUserFilter] = useState('all')
   const [userBranchFilter, setUserBranchFilter] = useState('all')
   const [userArchiveFilter, setUserArchiveFilter] = useState('active')
@@ -84,6 +138,9 @@ export default function AdminDashboard() {
   const [landStatusFilter, setLandStatusFilter] = useState('all')
   const [landBranchFilter, setLandBranchFilter] = useState('all')
   const [landArchiveFilter, setLandArchiveFilter] = useState('active')
+  const [landView, setLandView] = useState('list')
+  const [landPage, setLandPage] = useState(1)
+  const landPerPage = 9
   const [landActionTarget, setLandActionTarget] = useState(null)
   const [landActionLoading, setLandActionLoading] = useState(false)
   const [selectedTxn, setSelectedTxn] = useState(null)
@@ -109,7 +166,6 @@ export default function AdminDashboard() {
   const [profileModalOpen, setProfileModalOpen] = useState(false)
   const [addLandOpen, setAddLandOpen] = useState(false)
   const [addLandLoading, setAddLandLoading] = useState(false)
-  const [landView, setLandView] = useState('list')
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('adminDashboardSidebarCollapsed') === 'true')
   const [mapSelected, setMapSelected] = useState(null)
   const [mapPanelOpen, setMapPanelOpen] = useState(true)
@@ -128,20 +184,35 @@ export default function AdminDashboard() {
   const fetchListings = useCallback(async () => {
     const archivedParam = landArchiveFilter === 'archived' ? 'true' : landArchiveFilter === 'all' ? 'all' : 'false'
     const res = await api.get(`/listings?all=true&archived=${archivedParam}`)
-    setListings(res.data)
+    setListings(toArray(res.data, 'listings'))
   }, [landArchiveFilter])
 
   const fetchAdminData = useCallback(() => {
     Promise.all([
-      api.get('/admin/dashboard').then((res) => setStats(res.data)),
-      api.get(`/admin/users?archived=${userArchiveFilter === 'archived' ? 'true' : 'false'}`).then((res) => setUsers(res.data)),
-      fetchListings(),
-      api.get('/transactions').then((res) => setTransactions(res.data)),
-      api.get('/installments').then((res) => setInstallments(res.data))
-    ])
+      api.get('/admin/dashboard'),
+      api.get(`/admin/users?archived=${userArchiveFilter === 'archived' ? 'true' : 'false'}`),
+      api.get(`/listings?all=true&archived=${landArchiveFilter === 'archived' ? 'true' : landArchiveFilter === 'all' ? 'all' : 'false'}`),
+      api.get('/transactions'),
+      api.get('/installments')
+    ]).then(([statsResponse, usersResponse, listingsResponse, transactionsResponse, installmentsResponse]) => {
+      const next = {
+        stats: statsResponse.data,
+        users: toArray(usersResponse.data, 'users'),
+        listings: toArray(listingsResponse.data, 'listings'),
+        transactions: toArray(transactionsResponse.data, 'transactions'),
+        installments: toArray(installmentsResponse.data, 'installments'),
+        chain
+      }
+      adminDashboardCache = next
+      setStats(next.stats)
+      setUsers(next.users)
+      setListings(next.listings)
+      setTransactions(next.transactions)
+      setInstallments(next.installments)
+    })
       .catch((err) => addToast(err.response?.data?.error || 'Failed to load admin data', 'error'))
       .finally(() => setLoading(false))
-  }, [addToast, fetchListings, userArchiveFilter])
+  }, [addToast, userArchiveFilter, landArchiveFilter])
 
   const loadBlockchain = async () => {
     const [chainResponse, validationResponse, contractResponse] = await Promise.all([
@@ -161,6 +232,14 @@ export default function AdminDashboard() {
       setLedgerError('')
     }
     setActiveTab(tab)
+  }
+
+  const handleAdminNavigation = (tab) => {
+    if (tab === 'branches') {
+      navigate('/admin/branches')
+      return
+    }
+    selectTab(tab)
   }
 
   const unlockLedger = async (event) => {
@@ -205,6 +284,10 @@ export default function AdminDashboard() {
     })
   }, [activeTab, ledgerUnlocked])
 
+  useEffect(() => {
+    setNotificationPage(1)
+  }, [notifications.length])
+
   useAutoRefresh(fetchAdminData, [fetchAdminData], 30000)
 
   const landModalInitialData = useMemo(() => {
@@ -242,6 +325,10 @@ export default function AdminDashboard() {
   }, [selectedLand])
 
   const landModalExistingPhotos = useMemo(() => selectedLand?.photos || [], [selectedLand?.photos])
+
+  useEffect(() => {
+    setLandPage(1)
+  }, [search, landStatusFilter, landBranchFilter, landArchiveFilter])
 
   if (loading) return (
     <div className="p-6 md:p-8 flex items-center justify-center min-h-[60vh]">
@@ -313,6 +400,20 @@ export default function AdminDashboard() {
     const matchesSearch = !q || (l.title || '').toLowerCase().includes(q) || (l.location_text || '').toLowerCase().includes(q)
     return matchesStatus && matchesBranch && matchesSearch
   })
+
+  const landPageCount = Math.max(1, Math.ceil(filteredListings.length / landPerPage))
+  const currentLandPage = Math.min(landPage, landPageCount)
+  const visibleLandListings = filteredListings.slice(
+    (currentLandPage - 1) * landPerPage,
+    currentLandPage * landPerPage
+  )
+
+  const notificationPageCount = Math.max(1, Math.ceil(notifications.length / notificationsPerPage))
+  const currentNotificationPage = Math.min(notificationPage, notificationPageCount)
+  const visibleNotifications = notifications.slice(
+    (currentNotificationPage - 1) * notificationsPerPage,
+    currentNotificationPage * notificationsPerPage
+  )
 
   const handleArchiveAction = async () => {
     if (!deleteTarget) return
@@ -606,6 +707,7 @@ export default function AdminDashboard() {
     }
     try {
       await api.post('/listings', data, { headers: { 'Content-Type': 'multipart/form-data' } })
+      if (payload._draftKey) localStorage.removeItem(payload._draftKey)
       addToast('Land listing added successfully', 'success')
       setAddLandOpen(false)
       await fetchListings()
@@ -660,7 +762,12 @@ export default function AdminDashboard() {
       if (form.polygon_points && form.polygon_points.length >= 3) {
         fd.append('polygon_geojson', JSON.stringify({
           type: 'Polygon',
-          coordinates: [[...form.polygon_points, form.polygon_points[0]].map(([lat, lng]) => [Number(lng), Number(lat)])]
+          coordinates: [[...form.polygon_points, form.polygon_points[0]].map(([lat, lng]) => [Number(lng), Number(lat)])],
+          properties: {
+            ...(selectedLand.polygon_geojson?.properties || {}),
+            point_colors: form.boundary_point_colors || [],
+            point_sizes: form.boundary_point_sizes || []
+          }
         }))
       } else if (selectedLand.polygon_geojson) {
         fd.append('polygon_geojson', JSON.stringify(selectedLand.polygon_geojson))
@@ -711,7 +818,7 @@ export default function AdminDashboard() {
 
   const branchBadge = (branch) => (
     <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-100">
-      <MapPin className="w-3 h-3" /> {branch || 'Unassigned'}
+      <MapPin className="w-3 h-3" /> {displayBranch(branch) || 'Unassigned'}
     </span>
   )
 
@@ -754,13 +861,13 @@ export default function AdminDashboard() {
                 setLoading(true)
                 Promise.all([
                   api.get('/admin/dashboard').then((res) => setStats(res.data)),
-                  api.get(`/admin/users?archived=${userArchiveFilter === 'archived' ? 'true' : 'false'}`).then((res) => setUsers(res.data)),
+                  api.get(`/admin/users?archived=${userArchiveFilter === 'archived' ? 'true' : 'false'}`).then((res) => setUsers(toArray(res.data, 'users'))),
                   api.get('/blockchain/validate').then((res) => setValid(res.data.valid)),
                   api.get('/blockchain/chain').then((res) => setChain(res.data)),
                   api.get('/blockchain/contract').then((res) => setContract(res.data)),
                   fetchListings(),
-                  api.get('/transactions').then((res) => setTransactions(res.data)),
-                  api.get('/installments').then((res) => setInstallments(res.data))
+                  api.get('/transactions').then((res) => setTransactions(toArray(res.data, 'transactions'))),
+                  api.get('/installments').then((res) => setInstallments(toArray(res.data, 'installments')))
                 ]).catch(() => addToast('Failed to refresh dashboard data', 'error')).finally(() => setLoading(false))
               }}
               className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl text-sm font-bold bg-white/10 hover:bg-white/20 border border-white/10 transition text-white"
@@ -888,7 +995,7 @@ export default function AdminDashboard() {
                           {isTop ? <Trophy className="w-4 h-4" /> : i + 1}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="font-bold text-gray-900 truncate">{b.branch}</p>
+                          <p className="font-bold text-gray-900 truncate">{displayBranch(b.branch)}</p>
                           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 mt-1">
                             <span className="font-semibold text-emerald-600">{formatPeso(b.sales)}</span>
                             <span>{b.transactions} txns</span>
@@ -972,6 +1079,34 @@ export default function AdminDashboard() {
                   <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                     <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">Total</p>
                     <p className="text-2xl font-extrabold text-gray-900">{totalTxnCount}</p>
+                  </div>
+                </div>
+
+                <div className="border-t border-gray-100 pt-4">
+                  <div className="mb-3 flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-bold text-gray-900">Needs attention</h3>
+                      <p className="text-[11px] text-gray-500">Payment records that need review</p>
+                    </div>
+                    <AlertCircle className="h-4 w-4 text-amber-500" />
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <PaymentStatusRing
+                      label="Pending"
+                      count={pendingCount}
+                      amount={pendingAmount}
+                      total={totalTxnCount}
+                      color="#d97706"
+                      track="#fef3c7"
+                    />
+                    <PaymentStatusRing
+                      label="Rejected"
+                      count={rejectedCount}
+                      amount={rejectedAmount}
+                      total={totalTxnCount}
+                      color="#dc2626"
+                      track="#fee2e2"
+                    />
                   </div>
                 </div>
               </div>
@@ -1107,7 +1242,7 @@ export default function AdminDashboard() {
                       <div className={`w-9 h-9 rounded-lg ${style.bg} flex items-center justify-center`}>
                         <Building2 className={`w-4 h-4 ${style.text}`} />
                       </div>
-                      <h3 className="font-bold text-gray-900">{b.branch}</h3>
+                      <h3 className="font-bold text-gray-900">{displayBranch(b.branch)}</h3>
                     </div>
                     <TrendingUp className={`w-4 h-4 ${style.text} opacity-0 group-hover:opacity-100 transition`} />
                   </div>
@@ -1131,16 +1266,16 @@ export default function AdminDashboard() {
               <p className="text-xs text-gray-500">Ledger validation status</p>
             </div>
           </div>
-          <div className={`rounded-xl p-6 flex items-center gap-5 border ${valid ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'}`}>
-            <div className={`w-16 h-16 rounded-2xl flex items-center justify-center shadow-inner ${valid ? 'bg-emerald-600' : 'bg-red-600'}`}>
-              {valid ? <Shield className="w-8 h-8 text-white" /> : <X className="w-8 h-8 text-white" />}
+          <div className={`rounded-xl p-6 flex items-center gap-5 border ${valid === null ? 'bg-slate-50 border-slate-200' : valid ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'}`}>
+            <div className={`w-16 h-16 rounded-2xl flex items-center justify-center shadow-inner ${valid === null ? 'bg-slate-500' : valid ? 'bg-emerald-600' : 'bg-red-600'}`}>
+              {valid === null ? <Activity className="w-8 h-8 text-white animate-pulse" /> : valid ? <Shield className="w-8 h-8 text-white" /> : <X className="w-8 h-8 text-white" />}
             </div>
             <div className="flex-1">
-              <p className="text-xl font-bold text-gray-900">{valid ? 'Chain Verified & Immutable' : 'Chain Validation Failed'}</p>
+              <p className="text-xl font-bold text-gray-900">{valid === null ? 'Checking Blockchain Ledger' : valid ? 'Chain Verified & Immutable' : 'Chain Validation Failed'}</p>
               <p className="text-sm text-gray-500">{chain.length} block{chain.length === 1 ? '' : 's'} in the local ledger</p>
             </div>
-            <div className={`px-4 py-2 rounded-xl text-sm font-bold ${valid ? 'bg-emerald-200 text-emerald-800' : 'bg-red-200 text-red-800'}`}>
-              {valid ? 'Secure' : 'Action Required'}
+            <div className={`px-4 py-2 rounded-xl text-sm font-bold ${valid === null ? 'bg-slate-200 text-slate-700' : valid ? 'bg-emerald-200 text-emerald-800' : 'bg-red-200 text-red-800'}`}>
+              {valid === null ? 'Checking…' : valid ? 'Secure' : 'Action Required'}
             </div>
           </div>
         </section>
@@ -1262,7 +1397,7 @@ export default function AdminDashboard() {
               >
                 <option value="all">All Branches</option>
                 {['Main Tagum', 'Panabo', 'Sto. Tomas', 'Davao City', 'Mati City', 'Digos City'].map((b) => (
-                  <option key={b} value={b}>{b}</option>
+                  <option key={b} value={b}>{displayBranch(b)}</option>
                 ))}
               </select>
             </div>
@@ -1325,7 +1460,7 @@ export default function AdminDashboard() {
                           >
                             <Eye className="w-3.5 h-3.5" /> View
                           </button>
-                          {(u.role === 'seller' || u.role === 'buyer') && (
+                          {u.role === 'seller' && (
                             <button
                               onClick={() => handleUpdateSeller(u)}
                               className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition"
@@ -1465,7 +1600,7 @@ export default function AdminDashboard() {
               >
                 <option value="all">All Branches</option>
                 {['Main Tagum', 'Panabo', 'Sto. Tomas', 'Davao City', 'Mati City', 'Digos City'].map((b) => (
-                  <option key={b} value={b}>{b}</option>
+                  <option key={b} value={b}>{displayBranch(b)}</option>
                 ))}
               </select>
             </div>
@@ -1821,18 +1956,12 @@ export default function AdminDashboard() {
                 >
                   <option value="all" className="text-gray-900">All Branches</option>
                   {['Main Tagum', 'Panabo', 'Sto. Tomas', 'Davao City', 'Mati City', 'Digos City'].map((b) => (
-                    <option key={b} value={b} className="text-gray-900">{b}</option>
+                    <option key={b} value={b} className="text-gray-900">{displayBranch(b)}</option>
                   ))}
                 </select>
                 <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/70 pointer-events-none" />
               </div>
             )}
-            <button
-              onClick={() => setAddLandOpen(true)}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold bg-white text-emerald-800 hover:bg-emerald-50 transition shadow-sm"
-            >
-              <Plus className="w-4 h-4" /> Add Land
-            </button>
           </div>
         </div>
 
@@ -1861,7 +1990,7 @@ export default function AdminDashboard() {
                         onClick={() => setMapExpandedBranch(isExpanded ? null : branch)}
                         className={`w-full flex items-center justify-between px-4 py-3 ${style.bg} ${style.hover} transition text-sm font-bold ${style.text}`}
                       >
-                        <span className="flex items-center gap-2"><Building2 className="w-4 h-4" /> {branch}</span>
+                        <span className="flex items-center gap-2"><Building2 className="w-4 h-4" /> {displayBranch(branch)}</span>
                         <div className="flex items-center gap-2">
                           <span className={`text-xs font-semibold ${style.badge} px-2.5 py-1 rounded-full`}>{items.length}</span>
                           {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -1889,7 +2018,7 @@ export default function AdminDashboard() {
                                     showAttribution={false}
                                   />
                                   <span className={`absolute top-2 left-2 px-2 py-1 rounded-lg text-[10px] font-bold shadow-sm backdrop-blur-sm ${style.bg} ${style.text}`}>
-                                    {getBranch(l)}
+                                    {displayBranch(getBranch(l))}
                                   </span>
                                   <span className={`absolute top-2 right-2 px-2 py-0.5 rounded-lg text-[10px] font-bold shadow-sm backdrop-blur-sm ${l.is_verified ? 'bg-emerald-600/90 text-white' : 'bg-amber-500/90 text-white'}`}>
                                     {l.is_verified ? 'Verified' : 'Unverified'}
@@ -1901,7 +2030,7 @@ export default function AdminDashboard() {
                                   <div className="flex items-center gap-2 text-xs text-gray-500">
                                     <span className="bg-gray-100 px-2 py-0.5 rounded-lg">{l.area_sqm} sqm</span>
                                     <span className="line-clamp-1 flex items-center gap-1">
-                                      <MapPin className="w-3 h-3 flex-shrink-0 text-emerald-600" /> {l.location_text || getBranch(l)}
+                                      <MapPin className="w-3 h-3 flex-shrink-0 text-emerald-600" /> {l.location_text || displayBranch(getBranch(l))}
                                     </span>
                                   </div>
                                   <p className="text-[11px] text-gray-400">Seller: {l.seller?.full_name || '—'}</p>
@@ -1932,20 +2061,31 @@ export default function AdminDashboard() {
 
           {/* Map */}
           <div className="flex-1 relative min-h-0">
-            <MapView listings={visibleData} height="100%" flyTo={mapFlyTo} onSelectListing={handleSelect} selectedListingId={mapSelected?.id} />
-            {selected && (
+            <MapView
+              listings={visibleData}
+              height="100%"
+              flyTo={mapFlyTo}
+              onSelectListing={handleSelect}
+              selectedListingId={mapSelected?.id}
+              adminActions={{
+                onEdit: (listing) => navigate(`/edit-listing/${listing.id}`, { state: { from: '/admin', tab: 'mapview', listing } }),
+                onArchive: setLandActionTarget,
+              }}
+            />
+            {/* Selected-land popup removed from the admin map. */}
+            {false && selected && (
               <div className="absolute bottom-3 left-3 right-3 md:left-4 md:right-auto md:w-[22rem] bg-white/95 backdrop-blur border border-gray-200/80 shadow-2xl rounded-2xl p-4 z-20 max-h-[70vh] overflow-y-auto animate-fadeIn">
                 <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-600 to-emerald-400 rounded-t-2xl" />
                 <div className="flex items-start justify-between gap-2 mb-3">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-1.5">
                       <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 text-[10px] font-semibold px-1.5 py-0.5 rounded-full capitalize">
-                        <Building2 className="w-3 h-3" /> {getBranch(selected)}
+                        <Building2 className="w-3 h-3" /> {displayBranch(getBranch(selected))}
                       </span>
                       <h3 className="font-bold text-gray-900 text-sm leading-tight">{selected.title}</h3>
                     </div>
                     <p className="text-xs text-gray-500 flex items-center gap-1 mt-0.5 line-clamp-1">
-                      <MapPin className="w-3 h-3 flex-shrink-0 text-emerald-600" /> {selected.location_text || getBranch(selected)}
+                      <MapPin className="w-3 h-3 flex-shrink-0 text-emerald-600" /> {selected.location_text || displayBranch(getBranch(selected))}
                     </p>
                   </div>
                   <div className="flex items-center gap-0.5 flex-shrink-0">
@@ -2017,7 +2157,7 @@ export default function AdminDashboard() {
                         </button>
                       )}
                       <button
-                        onClick={() => navigate(`/edit-listing/${selected.id}`)}
+                        onClick={() => navigate(`/edit-listing/${selected.id}`, { state: { from: '/admin', listing: selected } })}
                         className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition"
                       >
                         <Edit3 className="w-3 h-3" /> Edit
@@ -2080,7 +2220,7 @@ export default function AdminDashboard() {
           <button
             onClick={() => {
               setLoading(true)
-              api.get('/installments').then((res) => setInstallments(res.data)).finally(() => setLoading(false))
+              api.get('/installments').then((res) => setInstallments(toArray(res.data, 'installments'))).finally(() => setLoading(false))
             }}
             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold bg-white text-slate-800 hover:bg-slate-50 transition shadow-sm"
           >
@@ -2184,7 +2324,7 @@ export default function AdminDashboard() {
               onClick={() => setLandView('list')}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition ${landView === 'list' ? 'bg-white text-emerald-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
             >
-              <LayoutList className="w-4 h-4" /> List View
+              <LayoutList className="w-4 h-4" /> Inventory
             </button>
             <button
               onClick={() => setLandView('map')}
@@ -2193,7 +2333,7 @@ export default function AdminDashboard() {
               <Map className="w-4 h-4" /> Map View
             </button>
           </div>
-          <div className="flex flex-wrap items-center gap-3 lg:ml-auto">
+          <div className="flex w-full flex-wrap items-center justify-end gap-3 lg:w-auto">
             <div className="relative">
               <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
               <select
@@ -2217,7 +2357,7 @@ export default function AdminDashboard() {
               >
                 <option value="all">All Branches</option>
                 {['Main Tagum', 'Panabo', 'Sto. Tomas', 'Davao City', 'Mati City', 'Digos City'].map((b) => (
-                  <option key={b} value={b}>{b}</option>
+                  <option key={b} value={b}>{displayBranch(b)}</option>
                 ))}
               </select>
             </div>
@@ -2233,16 +2373,10 @@ export default function AdminDashboard() {
                 <option value="all">All</option>
               </select>
             </div>
-            <button
-              onClick={() => handleExport()}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition shadow-sm"
-            >
-              <FileText className="w-4 h-4" /> Export
-            </button>
           </div>
         </div>
 
-        {/* Search bar below list/map view tabs — hidden in map view */}
+        {/* Search bar below the view switch; map view keeps the map uncluttered */}
         {landView !== 'map' && (
           <div className="bg-white rounded-2xl shadow-card border border-gray-100 p-4">
             <div className="relative w-full">
@@ -2259,36 +2393,24 @@ export default function AdminDashboard() {
         )}
 
         {landView === 'map' ? (
-          renderMapExplorer({
-            data: filteredListings,
-            title: 'Land Inventory Map',
-            subtitle: 'Explore all properties with interactive map and branch grouping'
-          })
+          <div className="relative rounded-2xl border border-gray-200 bg-white overflow-hidden h-[28rem] lg:h-[36rem] shadow-card">
+            <MapView
+              listings={filteredListings}
+              height="100%"
+              fitBounds={true}
+              scrollWheelZoom={true}
+              containerClassName="h-full w-full"
+              adminActions={{
+                onVerify: (l) => handleVerifyListing(l.id),
+                onEdit: (l) => navigate(`/edit-listing/${l.id}`, { state: { from: '/admin', listing: l } }),
+                onArchive: setLandActionTarget,
+              }}
+            />
+          </div>
         ) : (
           <div className="space-y-5">
-            <div className="relative rounded-2xl border border-gray-200 bg-white overflow-hidden h-[28rem] lg:h-[32rem] shadow-card">
-              <button
-                onClick={() => setAddLandOpen(true)}
-                className="absolute bottom-4 left-4 z-20 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition shadow-lg"
-              >
-                <Plus className="w-4 h-4" /> Add Land
-              </button>
-              <MapView
-                listings={filteredListings}
-                height="100%"
-                fitBounds={true}
-                scrollWheelZoom={false}
-                containerClassName="h-full w-full"
-                adminActions={{
-                  onVerify: (l) => handleVerifyListing(l.id),
-                  onEdit: (l) => navigate(`/edit-listing/${l.id}`),
-                  onArchive: setLandActionTarget,
-                }}
-              />
-            </div>
-
             <div className="bg-white rounded-2xl shadow-card border border-gray-100 p-6">
-              <div className="flex items-center justify-between mb-5">
+              <div className="mb-5 flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <div className="bg-emerald-100 p-2 rounded-xl"><LayoutList className="w-5 h-5 text-emerald-700" /></div>
                   <div>
@@ -2296,13 +2418,21 @@ export default function AdminDashboard() {
                     <p className="text-xs text-gray-500">{filteredListings.length} result{filteredListings.length === 1 ? '' : 's'}</p>
                   </div>
                 </div>
+                <button
+                  onClick={() => setAddLandOpen(true)}
+                  className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700"
+                >
+                  <Plus className="w-4 h-4" /> Add Land
+                </button>
               </div>
               {filteredListings.length === 0 ? (
                 <EmptyState title="No listings" message="No land listings match the selected filters." />
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 max-h-[52rem] overflow-y-auto pr-2">
-                  {filteredListings.map((l) => {
+                  {visibleLandListings.map((l) => {
                     const style = getStyle(getBranch(l))
+                    const categoryStyle = LAND_CATEGORY_STYLES[l.zoning_classification] || { Icon: MapPin, color: '#64748b', bg: '#f1f5f9' }
+                    const CategoryIcon = categoryStyle.Icon
                     return (
                       <div key={l.id} className={`w-full bg-white border ${style.border} rounded-2xl p-0 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition overflow-hidden group`} style={{ borderLeftWidth: 4, borderLeftColor: style.color }}>
                         <div className="h-36 bg-gray-100 relative overflow-hidden">
@@ -2312,30 +2442,36 @@ export default function AdminDashboard() {
                             <MapView singleListing={l} height="100%" dragging={false} scrollWheelZoom={false} zoomControl={false} doubleClickZoom={false} showLayersControl={false} showAttribution={false} />
                           )}
                           <span className={`absolute top-2 left-2 px-2 py-1 rounded-lg text-[10px] font-bold shadow-sm backdrop-blur-sm ${style.bg} ${style.text}`}>
-                            {getBranch(l)}
+                            {displayBranch(getBranch(l))}
                           </span>
+                          {l.photos?.[0] && (
+                            <span
+                              className="absolute bottom-2 left-2 flex h-10 w-10 items-center justify-center rounded-full border-2 border-white shadow-lg"
+                              style={{ backgroundColor: categoryStyle.bg, color: categoryStyle.color }}
+                              title={l.zoning_classification || 'Land type'}
+                            >
+                              <CategoryIcon className="h-5 w-5" />
+                            </span>
+                          )}
                         </div>
                         <div className="p-4">
                           <div className="flex items-start justify-between gap-2">
                             <h4 className="font-bold text-gray-900 line-clamp-1 flex-1">{l.title}</h4>
                             <div className="flex gap-1 flex-shrink-0">
-                              {!l.is_verified && (
-                                <button onClick={() => handleVerifyListing(l.id)} className="inline-flex items-center px-2 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 transition">
-                                  <CheckCircle className="w-3 h-3" />
-                                </button>
-                              )}
-                              <button onClick={() => navigate(`/edit-listing/${l.id}`)} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition">
+                              <button onClick={() => navigate(`/edit-listing/${l.id}`, { state: { from: '/admin', listing: l } })} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition">
                                 <Edit3 className="w-3 h-3" /> Edit
                               </button>
                               <button
-                                onClick={() => setLandActionTarget(l)}
+                                onClick={() => l.is_verified ? setLandActionTarget(l) : handleVerifyListing(l.id)}
                                 className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition ${
-                                  l.archived
-                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-                                    : 'bg-gray-100 text-gray-700 border-gray-200 hover:bg-gray-200'
+                                  !l.is_verified
+                                    ? 'bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700'
+                                    : l.archived
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                                      : 'bg-gray-100 text-gray-700 border-gray-200 hover:bg-gray-200'
                                 }`}
                               >
-                                {l.archived ? <><RotateCcw className="w-3 h-3" /> Restore</> : <><Archive className="w-3 h-3" /> Archive</>}
+                                {!l.is_verified ? <><CheckCircle className="w-3 h-3" /> Confirm</> : l.archived ? <><RotateCcw className="w-3 h-3" /> Restore</> : <><Archive className="w-3 h-3" /> Archive</>}
                               </button>
                             </div>
                           </div>
@@ -2364,6 +2500,37 @@ export default function AdminDashboard() {
                       </div>
                     )
                   })}
+                </div>
+              )}
+              {filteredListings.length > 0 && (
+                <div className="mt-6 flex flex-col gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-sm text-gray-500">
+                    Showing <span className="font-bold text-gray-700">{(currentLandPage - 1) * landPerPage + 1}</span>
+                    {' '}to{' '}
+                    <span className="font-bold text-gray-700">{Math.min(currentLandPage * landPerPage, filteredListings.length)}</span>
+                    {' '}of <span className="font-bold text-gray-700">{filteredListings.length}</span> lands
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setLandPage((page) => Math.max(1, page - 1))}
+                      disabled={currentLandPage <= 1}
+                      className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 transition hover:border-emerald-300 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <ChevronLeft className="h-4 w-4" /> Previous
+                    </button>
+                    <span className="min-w-[5.5rem] text-center text-sm font-bold text-gray-700">
+                      Page {currentLandPage} of {landPageCount}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setLandPage((page) => Math.min(landPageCount, page + 1))}
+                      disabled={currentLandPage >= landPageCount}
+                      className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 transition hover:border-emerald-300 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Next <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -2424,7 +2591,7 @@ export default function AdminDashboard() {
             return (
               <button
                 key={key}
-                onClick={() => selectTab(key)}
+                onClick={() => handleAdminNavigation(key)}
                 title={label}
                 className={`w-full flex items-center gap-3 rounded-xl text-sm font-semibold transition ${
                   active
@@ -2514,7 +2681,7 @@ export default function AdminDashboard() {
                     {notifications.length === 0 ? (
                       <p className="px-4 py-6 text-sm text-gray-500 text-center">No notifications yet</p>
                     ) : (
-                      notifications.map((n) => {
+                      visibleNotifications.map((n) => {
                         const isListing = n.type === 'listing';
                         const Icon = isListing ? LandPlot : n.type === 'transaction' ? Banknote : Info;
                         return (
@@ -2540,10 +2707,45 @@ export default function AdminDashboard() {
                               <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{n.message}</p>
                               <p className="text-[10px] text-gray-400 mt-1">{new Date(n.created_at).toLocaleString()}</p>
                             </div>
-                            {!n.is_read && <span className="w-2 h-2 bg-emerald-500 rounded-full mt-1.5 flex-shrink-0" />}
+                            {!n.is_read && (
+                              <span className="mt-1 inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700" title="Unread notification">
+                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
+                                Unread
+                              </span>
+                            )}
                           </button>
                         );
                       })
+                    )}
+                    {notifications.length > notificationsPerPage && (
+                      <div className="flex items-center justify-between gap-2 border-t border-gray-100 bg-gray-50/80 px-3 py-2">
+                        <p className="text-[10px] text-gray-500">
+                          {((currentNotificationPage - 1) * notificationsPerPage) + 1}-{Math.min(currentNotificationPage * notificationsPerPage, notifications.length)} of {notifications.length}
+                        </p>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setNotificationPage((page) => Math.max(1, page - 1))}
+                            disabled={currentNotificationPage <= 1}
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 transition hover:border-emerald-300 hover:text-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
+                            aria-label="Previous notifications"
+                          >
+                            <ChevronLeft className="h-3.5 w-3.5" />
+                          </button>
+                          <span className="min-w-[3.5rem] text-center text-[10px] font-bold text-gray-600">
+                            {currentNotificationPage} / {notificationPageCount}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setNotificationPage((page) => Math.min(notificationPageCount, page + 1))}
+                            disabled={currentNotificationPage >= notificationPageCount}
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 transition hover:border-emerald-300 hover:text-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
+                            aria-label="Next notifications"
+                          >
+                            <ChevronRight className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
                     )}
                   </div>
                 )}
@@ -2604,7 +2806,7 @@ export default function AdminDashboard() {
                 return (
                   <button
                     key={key}
-                    onClick={() => selectTab(key)}
+                    onClick={() => handleAdminNavigation(key)}
                     className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition ${
                       activeTab === key
                         ? 'bg-emerald-700 text-white'
@@ -2838,12 +3040,14 @@ export default function AdminDashboard() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <button
-                  onClick={() => { setViewUser(null); setEditProfileUser(viewUser) }}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition"
-                >
-                  <Edit3 className="w-3.5 h-3.5" /> Edit Profile
-                </button>
+                {viewUser.role === 'seller' && (
+                  <button
+                    onClick={() => { setViewUser(null); setEditProfileUser(viewUser) }}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" /> Edit Profile
+                  </button>
+                )}
                 <button onClick={() => setViewUser(null)} className="p-2 rounded-xl hover:bg-gray-100 transition"><X className="w-5 h-5 text-gray-500" /></button>
               </div>
             </div>
@@ -2859,7 +3063,7 @@ export default function AdminDashboard() {
                   <ProfileField label="Role" value={viewUser.role ? viewUser.role.charAt(0).toUpperCase() + viewUser.role.slice(1) : null} />
                   <ProfileField label="User ID" value={viewUser.id ? `#${viewUser.id}` : null} />
                   <ProfileField label="Joined" value={viewUser.created_at ? new Date(viewUser.created_at).toLocaleDateString() : null} />
-                  <ProfileField label="Branch" value={viewUser.branch} />
+                  <ProfileField label="Branch" value={displayBranch(viewUser.branch)} />
                 </div>
               </section>
 
@@ -2989,7 +3193,7 @@ export default function AdminDashboard() {
                   <MapPin className="w-3.5 h-3.5 text-amber-600" />
                   <p className="text-[10px] font-bold uppercase tracking-wide text-amber-600">Branch</p>
                 </div>
-                <p className="font-bold text-gray-900">{selectedTxn.listing ? getBranch(selectedTxn.listing) : (selectedTxn.seller?.branch || 'Main Tagum')}</p>
+                <p className="font-bold text-gray-900">{displayBranch(selectedTxn.listing ? getBranch(selectedTxn.listing) : (selectedTxn.seller?.branch || 'Main Tagum'))}</p>
               </div>
             </div>
 
