@@ -1,7 +1,9 @@
 import axios from 'axios'
 
 const api = axios.create({
-  baseURL: '/api'
+  // Vite injects VITE_API_URL at build time for the deployed frontend.
+  // Keep the relative fallback so local Vite proxy development still works.
+  baseURL: import.meta.env.VITE_API_URL || '/api'
 })
 
 api.interceptors.request.use((config) => {
