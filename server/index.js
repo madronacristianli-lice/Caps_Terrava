@@ -21,6 +21,7 @@ app.use((err, req, res, next) => {
 });
 
 let initializationPromise;
+let initializationStage = 'not started';
 
 const initialize = () => {
   if (!initializationPromise) {
@@ -28,8 +29,10 @@ const initialize = () => {
     // Load database/models and route modules inside the startup guard. This
     // keeps Vercel's health endpoint available and turns startup failures into
     // useful runtime logs instead of a generic FUNCTION_INVOCATION_FAILED.
+    initializationStage = 'loading database models';
     const db = require('./models');
 
+    initializationStage = 'loading API routes';
     app.use('/api/auth', require('./routes/auth'));
     app.use('/api/listings', require('./routes/listings'));
     app.use('/api/inquiries', require('./routes/inquiries'));
@@ -50,6 +53,7 @@ const initialize = () => {
     // unavailable, and migrations belong in a controlled maintenance job.
     const shouldRunMigrations = !process.env.VERCEL && process.env.RUN_DB_MIGRATIONS === 'true';
 
+    initializationStage = 'database migration check';
     if (!shouldRunMigrations) {
       console.log('Skipping database migrations in Vercel runtime');
     } else {
@@ -164,8 +168,12 @@ if (process.env.VERCEL) {
       await initialize();
       return app(req, res);
     } catch (error) {
-      console.error('Unable to initialize server:', error);
-      return res.status(503).json({ error: 'Terrava backend initialization failed' });
+      console.error(`Unable to initialize server at ${initializationStage}:`, error?.stack || error);
+      return res.status(503).json({
+        error: 'Terrava backend initialization failed',
+        stage: initializationStage,
+        details: String(error?.message || error).slice(0, 300)
+      });
     }
   };
 } else {
