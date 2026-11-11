@@ -2,7 +2,12 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-const uploadDir = path.join(__dirname, '..', 'uploads');
+// Vercel's deployed filesystem is read-only except for /tmp. Keep the
+// persistent local uploads directory for development, but use the writable
+// temporary directory in serverless functions.
+const uploadDir = process.env.VERCEL
+  ? path.join('/tmp', 'terrava-uploads')
+  : path.join(__dirname, '..', 'uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
 const storage = multer.diskStorage({
