@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { resolveMediaUrl } from '../utils/media.js'
 
 export default function Avatar({ url, name = '', sizeClass = 'w-10 h-10', textClass = 'text-xs', className = '', fallbackClass = 'bg-brand-600' }) {
   const [failed, setFailed] = useState(false)
@@ -10,7 +11,7 @@ export default function Avatar({ url, name = '', sizeClass = 'w-10 h-10', textCl
   if (url && !failed) {
     return (
       <img
-        src={url}
+        src={resolveMediaUrl(url)}
         alt={name || 'User'}
         className={`object-cover rounded-full ${sizeClass} ${className}`}
         onError={() => setFailed(true)}

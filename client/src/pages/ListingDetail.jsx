@@ -4,6 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 import api from '../api/api.js'
+import { resolveMediaUrl } from '../utils/media.js'
 import MapView from '../components/MapView.jsx'
 import Spinner from '../components/Spinner.jsx'
 import { SkeletonDetail } from '../components/Skeleton.jsx'
@@ -128,7 +129,7 @@ export default function ListingDetail() {
       {listing.photos?.length > 0 && (
         <div className="relative rounded-2xl overflow-hidden border border-gray-200 shadow-card bg-gray-100">
           <img
-            src={listing.photos[activePhoto]}
+            src={resolveMediaUrl(listing.photos[activePhoto])}
             alt={listing.title}
             onClick={() => setLightboxOpen(true)}
             className="w-full h-[300px] md:h-[400px] object-cover cursor-pointer hover:opacity-95 transition"
@@ -167,7 +168,7 @@ export default function ListingDetail() {
                   onClick={() => setActivePhoto(i)}
                   className={`flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition ${i === activePhoto ? 'border-brand-500 ring-1 ring-brand-300' : 'border-transparent opacity-70 hover:opacity-100'}`}
                 >
-                  <img src={url} alt="" className="w-full h-full object-cover" />
+                  <img src={resolveMediaUrl(url)} alt="" className="w-full h-full object-cover" />
                 </button>
               ))}
             </div>
@@ -190,7 +191,7 @@ export default function ListingDetail() {
               <X className="w-6 h-6" />
             </button>
             <img
-              src={listing.photos[activePhoto]}
+              src={resolveMediaUrl(listing.photos[activePhoto])}
               alt={listing.title}
               className="max-w-full max-h-[80vh] object-contain rounded-lg shadow-2xl"
               onClick={(e) => e.stopPropagation()}

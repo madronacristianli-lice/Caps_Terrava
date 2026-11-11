@@ -5,6 +5,7 @@ import { Home, Building2, Wheat, Factory, MapPinned, ChevronRight } from 'lucide
 import { useAuth } from '../context/AuthContext.jsx'
 import { BRANCH_COORDINATES, BRANCH_ZOOM } from '../utils/branches.js'
 import { DEFAULT_BOUNDARY_POINT_COLOR, DEFAULT_BOUNDARY_POINT_SIZE } from '../utils/mapColors.js'
+import { resolveMediaUrl } from '../utils/media.js'
 import 'leaflet/dist/leaflet.css'
 
 const ZONING_STYLES = {
@@ -337,7 +338,7 @@ function ActivePolygon({ listing, isActive, onSelect, adminActions }) {
       <div style={{ minWidth: 180 }}>
         {listing.photos?.[0] && (
           <div style={{ position: 'relative', margin: '0 4px 12px', borderRadius: 10, overflow: 'visible', height: 100, border: '1px solid #d1d5db', background: '#f8fafc' }}>
-            <img src={listing.photos[photoIndex % listing.photos.length]} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 10 }} />
+            <img src={resolveMediaUrl(listing.photos[photoIndex % listing.photos.length])} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 10 }} />
             <ZoningIconCircle classification={listing.zoning_classification} />
             {listing.photos.length > 1 && (
               <button type="button" onClick={() => setPhotoIndex((index) => (index + 1) % listing.photos.length)} title="Next photo" aria-label="Next photo" style={{ position: 'absolute', bottom: 8, right: 8, width: 22, minWidth: 22, height: 22, minHeight: 22, padding: 0, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1, background: '#047857', color: '#fff', border: '2px solid #fff', borderRadius: '50%', cursor: 'pointer', boxShadow: '0 2px 6px rgba(0,0,0,.3)' }}>
@@ -440,7 +441,7 @@ function PhotoGeotagMarkers({ listing }) {
           <Popup>
             <div style={{ minWidth: 140, textAlign: 'center' }}>
               <img
-                src={tag.url}
+                src={resolveMediaUrl(tag.url)}
                 alt=""
                 style={{ width: '100%', height: 90, objectFit: 'cover', borderRadius: 6, marginBottom: 6 }}
               />
@@ -487,7 +488,7 @@ function FallbackMarker({ listing, isActive, onSelect, adminActions }) {
         <div style={{ minWidth: 180 }}>
           {listing.photos?.[0] && (
             <div style={{ position: 'relative', margin: '0 4px 12px', borderRadius: 10, overflow: 'visible', height: 100, border: '1px solid #d1d5db', background: '#f8fafc' }}>
-              <img src={listing.photos[photoIndex % listing.photos.length]} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 10 }} />
+              <img src={resolveMediaUrl(listing.photos[photoIndex % listing.photos.length])} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 10 }} />
               <ZoningIconCircle classification={listing.zoning_classification} />
               {listing.photos.length > 1 && (
                 <button type="button" onClick={() => setPhotoIndex((index) => (index + 1) % listing.photos.length)} title="Next photo" aria-label="Next photo" style={{ position: 'absolute', bottom: 8, right: 8, width: 22, minWidth: 22, height: 22, minHeight: 22, padding: 0, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1, background: '#047857', color: '#fff', border: '2px solid #fff', borderRadius: '50%', cursor: 'pointer', boxShadow: '0 2px 6px rgba(0,0,0,.3)' }}>

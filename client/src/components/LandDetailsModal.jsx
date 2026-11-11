@@ -14,6 +14,7 @@ import {
   Minimize2
 } from 'lucide-react'
 import MapView from './MapView.jsx'
+import { resolveMediaUrl } from '../utils/media.js'
 import PesoIcon from './PesoIcon.jsx'
 import { BOUNDARY_POINT_COLORS, DEFAULT_BOUNDARY_POINT_COLOR, BOUNDARY_POINT_SIZES, DEFAULT_BOUNDARY_POINT_SIZE } from '../utils/mapColors.js'
 
@@ -506,7 +507,7 @@ export default function LandDetailsModal({ isOpen, onClose, initialData = {}, ex
                   <div className="grid grid-cols-3 gap-2 mb-3">
                     {existing.map((url, i) => (
                       <div key={`existing-${i}`} className="relative group aspect-square rounded-xl border border-slate-200 overflow-hidden cursor-pointer" onClick={() => { setLightboxIndex(i); setLightboxOpen(true) }}>
-                        <img src={url} alt={`Property ${i + 1}`} className="w-full h-full object-cover" />
+                        <img src={resolveMediaUrl(url)} alt={`Property ${i + 1}`} className="w-full h-full object-cover" />
                         {!readOnly && (
                           <button
                             type="button"
@@ -783,7 +784,7 @@ export default function LandDetailsModal({ isOpen, onClose, initialData = {}, ex
                 <X className="w-6 h-6" />
               </button>
               <img
-                src={allPhotos[lightboxIndex]}
+                src={resolveMediaUrl(allPhotos[lightboxIndex])}
                 alt={`Property ${lightboxIndex + 1}`}
                 className="max-w-full max-h-[80vh] object-contain rounded-lg shadow-2xl"
                 onClick={(e) => e.stopPropagation()}

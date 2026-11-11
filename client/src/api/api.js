@@ -5,7 +5,7 @@ import axios from 'axios'
 // the backend instead of accidentally calling the frontend's /api route.
 const productionApiUrl = 'https://caps-terrava-1qx5.vercel.app/api'
 const configuredApiUrl = import.meta.env.VITE_API_URL
-const apiBaseUrl = import.meta.env.PROD && (!configuredApiUrl || configuredApiUrl === '/api')
+export const apiBaseUrl = import.meta.env.PROD && (!configuredApiUrl || configuredApiUrl === '/api')
   ? productionApiUrl
   : (configuredApiUrl || '/api')
 

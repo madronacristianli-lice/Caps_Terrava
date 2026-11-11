@@ -5,6 +5,7 @@ import { useToast } from '../../context/ToastContext.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useNotifications } from '../../context/NotificationContext.jsx'
 import api from '../../api/api.js'
+import { resolveMediaUrl } from '../../utils/media.js'
 import Spinner from '../../components/Spinner.jsx'
 import EmptyState from '../../components/EmptyState.jsx'
 import LandDetailsModal from '../../components/LandDetailsModal.jsx'
@@ -2140,7 +2141,7 @@ export default function AdminDashboard() {
                         <div className="flex gap-1.5 overflow-x-auto pb-1.5 scrollbar-thin scrollbar-thumb-emerald-200 scrollbar-track-transparent">
                           {selected.photos.map((url, i) => (
                             <div key={i} className="relative flex-shrink-0 w-16 h-16 rounded-lg border border-gray-200 overflow-hidden">
-                              <img src={url} alt={`Property ${i + 1}`} className="w-full h-full object-cover" />
+                              <img src={resolveMediaUrl(url)} alt={`Property ${i + 1}`} className="w-full h-full object-cover" />
                             </div>
                           ))}
                         </div>
@@ -2437,7 +2438,7 @@ export default function AdminDashboard() {
                       <div key={l.id} className={`w-full bg-white border ${style.border} rounded-2xl p-0 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition overflow-hidden group`} style={{ borderLeftWidth: 4, borderLeftColor: style.color }}>
                         <div className="h-36 bg-gray-100 relative overflow-hidden">
                           {l.photos?.[0] ? (
-                            <img src={l.photos[0]} alt="" className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />
+                            <img src={resolveMediaUrl(l.photos[0])} alt="" className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />
                           ) : (
                             <MapView singleListing={l} height="100%" dragging={false} scrollWheelZoom={false} zoomControl={false} doubleClickZoom={false} showLayersControl={false} showAttribution={false} />
                           )}

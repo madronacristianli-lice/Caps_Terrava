@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import api from '../api/api.js'
+import { resolveMediaUrl } from '../utils/media.js'
 import MapView from '../components/MapView.jsx'
 import Spinner from '../components/Spinner.jsx'
 import { ChevronDown, MapPin, Maximize, Tag, X, Eye, MessageCircle, Building2, Search, Home, ChevronLeft, ChevronRight, Wheat, Factory } from 'lucide-react'
@@ -416,7 +417,7 @@ export default function MapExplore() {
                 </button>
               )}
               <img
-                src={selected.photos[lightboxIndex]}
+                src={resolveMediaUrl(selected.photos[lightboxIndex])}
                 alt={`Property ${lightboxIndex + 1}`}
                 className="max-w-full max-h-[80vh] object-contain rounded-lg shadow-2xl"
                 onClick={(e) => e.stopPropagation()}

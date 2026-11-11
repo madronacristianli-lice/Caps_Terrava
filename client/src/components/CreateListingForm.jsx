@@ -19,6 +19,7 @@ import MapView from './MapView.jsx'
 import ConfirmDialog from './ConfirmDialog.jsx'
 import { displayBranchName, normalizeBranchName, MINDANAO_CITIES, BRANCH_COORDINATES, BRANCH_ZOOM } from '../utils/branches.js'
 import { BOUNDARY_POINT_COLORS, DEFAULT_BOUNDARY_POINT_COLOR, BOUNDARY_POINT_SIZES, DEFAULT_BOUNDARY_POINT_SIZE } from '../utils/mapColors.js'
+import { resolveMediaUrl } from '../utils/media.js'
 
 const BRANCHES = [
   'Main Tagum',
@@ -929,7 +930,7 @@ export default function CreateListingForm({ onSubmit, initialBranch = '', initia
                   const isGeotagged = existingPhotoGeotags.some((tag) => tag.url === url)
                   return (
                     <div key={i} className="relative group w-24 h-24">
-                      <img src={url} alt="" className="w-full h-full object-cover rounded-lg border" />
+                      <img src={resolveMediaUrl(url)} alt="" className="w-full h-full object-cover rounded-lg border" />
                       {isGeotagged && (
                         <span className="absolute bottom-1 left-1 bg-emerald-600 text-white text-[10px] px-1.5 py-0.5 rounded flex items-center gap-0.5">
                           <MapPin className="w-3 h-3" /> Geotagged

@@ -6,6 +6,7 @@ import Avatar from './Avatar.jsx'
 import ConfirmDialog from './ConfirmDialog.jsx'
 import { X, CreditCard, Receipt, User, MapPin, CheckCircle, Printer, Landmark } from 'lucide-react'
 import { displayBranchName } from '../utils/branches.js'
+import { resolveMediaUrl } from '../utils/media.js'
 
 const formatAmount = (value) => {
   const raw = String(value ?? '').replace(/,/g, '')
@@ -213,7 +214,7 @@ export default function RecordPaymentModal({ listing, transactions = [], onClose
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                   {receipt.buyer.photo_url ? (
                     <img
-                      src={receipt.buyer.photo_url}
+                      src={resolveMediaUrl(receipt.buyer.photo_url)}
                       alt={receipt.buyer.full_name}
                       style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover' }}
                     />

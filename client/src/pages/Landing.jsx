@@ -28,6 +28,7 @@ import {
   X,
 } from 'lucide-react'
 import api from '../api/api.js'
+import { resolveMediaUrl } from '../utils/media.js'
 import MapView from '../components/MapView.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
 import { BRANCHES, displayBranchName, getBranch } from '../utils/branches.js'
@@ -93,7 +94,7 @@ function PropertyVisual({ listing }) {
   const photo = Array.isArray(listing.photos) && listing.photos.length > 0 ? listing.photos[0] : null
 
   if (photo && !imageFailed) {
-    return <img src={photo} alt={listing.title || 'Land listing'} onError={() => setImageFailed(true)} className="h-full w-full object-cover transition duration-700 group-hover:scale-105" />
+    return <img src={resolveMediaUrl(photo)} alt={listing.title || 'Land listing'} onError={() => setImageFailed(true)} className="h-full w-full object-cover transition duration-700 group-hover:scale-105" />
   }
 
   return <MapView singleListing={listing} height="100%" dragging={false} scrollWheelZoom={false} doubleClickZoom={false} showLayersControl={false} showAttribution={false} containerClassName="h-full w-full" />
@@ -284,7 +285,7 @@ export default function Landing() {
   return (
     <div className="landing-flow flex flex-col overflow-hidden bg-white text-slate-900 dark:bg-slate-950 dark:text-white">
       <section id="top" className="order-1 relative isolate overflow-hidden bg-brand-950 text-white">
-        {heroPhoto && <img src={heroPhoto} alt="" className="absolute inset-0 -z-20 h-full w-full object-cover opacity-20 mix-blend-screen" />}
+        {heroPhoto && <img src={resolveMediaUrl(heroPhoto)} alt="" className="absolute inset-0 -z-20 h-full w-full object-cover opacity-20 mix-blend-screen" />}
         <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_16%_18%,rgba(52,211,153,0.28),transparent_30%),radial-gradient(circle_at_86%_78%,rgba(20,184,166,0.24),transparent_32%),linear-gradient(115deg,rgba(2,44,34,0.97),rgba(6,95,70,0.92),rgba(2,44,34,0.96))]" />
         <div className="absolute -right-32 top-20 -z-10 h-96 w-96 rounded-full border border-emerald-300/10 bg-emerald-400/10 blur-3xl" />
         <div className="mx-auto grid max-w-7xl gap-12 px-4 pb-20 pt-16 sm:px-6 lg:grid-cols-[1.03fr_0.97fr] lg:items-center lg:px-8 lg:pb-28 lg:pt-24">
