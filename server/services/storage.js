@@ -61,14 +61,12 @@ async function uploadToPersistentStorage(file, folder) {
 async function persistUploadedFile(file, folder) {
   if (!file) return null;
 
-  // Keep local development unchanged. Vercel must use persistent storage;
-  // otherwise /tmp files disappear between serverless invocations.
-  if (!process.env.VERCEL) return localUploadUrl(file);
-  if (!hasPersistentStorage) {
-    throw new Error('Persistent photo storage is not configured. Add SUPABASE_SERVICE_ROLE_KEY in the backend environment.');
-  }
-
-  return uploadToPersistentStorage(file, folder);
+  // Use Supabase Storage whenever it is configured. This is required for
+  // serverless Vercel functions and for Render instances, where local files
+  // are not a safe long-term source for listing/profile photos. Local
+  // development remains unchanged when the storage variables are absent.
+  if (hasPersistentStorage) return uploadToPersistentStorage(file, folder);
+  return localUploadUrl(file);
 }
 
 async function persistUploadedFiles(files, folder) {

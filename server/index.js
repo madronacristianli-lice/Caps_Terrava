@@ -7,7 +7,26 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-app.use(cors());
+const configuredCorsOrigins = [
+  process.env.FRONTEND_URL,
+  ...(process.env.CORS_ORIGINS || '').split(',')
+]
+  .map((origin) => origin.trim().replace(/\/$/, ''))
+  .filter(Boolean);
+
+// Keep local development and the existing deployment compatible when no
+// allow-list has been configured. Render should set FRONTEND_URL (and may set
+// CORS_ORIGINS for additional preview domains) to enable an explicit policy.
+const allowAnyCorsOrigin = configuredCorsOrigins.length === 0;
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || allowAnyCorsOrigin || configuredCorsOrigins.includes(origin.replace(/\/$/, ''))) {
+      return callback(null, true);
+    }
+    return callback(null, false);
+  },
+  credentials: true
+}));
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
