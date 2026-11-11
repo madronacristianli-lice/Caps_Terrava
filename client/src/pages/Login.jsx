@@ -1,11 +1,10 @@
-import { useCallback, useState } from 'react'
+import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 import { Eye, EyeOff, Mail, ShieldCheck, ArrowRight, Loader2 } from 'lucide-react'
 import AuthLayout from '../components/AuthLayout.jsx'
 import api from '../api/api.js'
-import GoogleSignInButton from '../components/GoogleSignInButton.jsx'
 
 export default function Login() {
   const [form, setForm] = useState({ email: '', password: '' })
@@ -16,24 +15,6 @@ export default function Login() {
   const navigate = useNavigate()
   const { login } = useAuth()
   const { addToast } = useToast()
-
-  const handleGoogleCredential = useCallback(async (response) => {
-    setError('')
-    setLoading(true)
-    try {
-      const res = await api.post('/auth/google', { credential: response.credential })
-      login(res.data)
-      addToast('Welcome to Terrava!', 'success')
-      navigate(res.data.user?.role === 'admin' ? '/admin' : '/')
-    } catch (err) {
-      const message = err.response?.data?.error
-        || (err.request ? 'Terrava server is unavailable. Start the backend, then try again.' : 'Google sign-in failed. Please try again.')
-      setError(message)
-      addToast(message, 'error')
-    } finally {
-      setLoading(false)
-    }
-  }, [addToast, login, navigate])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -163,23 +144,6 @@ export default function Login() {
             )}
           </button>
         </form>
-
-        <div className="relative my-5">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-gray-200" />
-          </div>
-          <div className="relative flex justify-center">
-            <span className="bg-white px-3 text-xs text-gray-400">or</span>
-          </div>
-        </div>
-
-        <GoogleSignInButton
-          onCredential={handleGoogleCredential}
-          onUnavailable={() => addToast('Google sign-in needs the Terrava OAuth Client ID in client/.env and server/.env.', 'error')}
-        />
-        <p className="mt-2 text-center text-xs text-gray-500">
-          Choose your Google account to sign in securely. No Google password is shared with Terrava.
-        </p>
 
         <p className="text-center mt-5 text-sm text-gray-500">
           No account?{' '}

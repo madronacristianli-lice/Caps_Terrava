@@ -5,7 +5,6 @@ import { useToast } from '../context/ToastContext.jsx'
 import { Eye, EyeOff, ShieldCheck, ArrowRight, Users } from 'lucide-react'
 import AuthLayout from '../components/AuthLayout.jsx'
 import api from '../api/api.js'
-import GoogleSignInButton from '../components/GoogleSignInButton.jsx'
 
 const normalizePhilippinePhone = (value) => {
   const raw = String(value || '').replace(/[\s()-]/g, '')
@@ -50,17 +49,6 @@ export default function Register() {
     if (!/[A-Z]/.test(pwd)) return 'Password must contain at least one uppercase letter'
     if (!/[0-9!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(pwd)) return 'Password must contain at least one number or special character'
     return ''
-  }
-
-  const handleGoogleCredential = async (response) => {
-    try {
-      const res = await api.post('/auth/google', { credential: response.credential })
-      login(res.data)
-      addToast('Account created successfully!', 'success')
-      navigate(res.data.user?.role === 'admin' ? '/admin' : '/')
-    } catch (err) {
-      addToast(err.response?.data?.error || 'Google sign-in failed', 'error')
-    }
   }
 
   const handleSubmit = async (e) => {
@@ -135,21 +123,6 @@ export default function Register() {
             </div>
           </div>
         )}
-
-        <GoogleSignInButton
-          text="signup_with"
-          onCredential={handleGoogleCredential}
-          onUnavailable={() => addToast('Google sign-in needs the Terrava OAuth Client ID in client/.env and server/.env.', 'error')}
-        />
-
-        <div className="relative my-5">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-gray-200" />
-          </div>
-          <div className="relative flex justify-center">
-            <span className="bg-white px-3 text-xs text-gray-400">or register manually</span>
-          </div>
-        </div>
 
         {verificationEmail ? <form onSubmit={handleVerify} className="space-y-5">
           <div className="rounded-2xl bg-emerald-50 border border-emerald-100 p-5 text-center">
