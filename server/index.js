@@ -8,7 +8,7 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 const configuredCorsOrigins = [
-  process.env.FRONTEND_URL,
+  process.env.FRONTEND_URL || '',
   ...(process.env.CORS_ORIGINS || '').split(',')
 ]
   .map((origin) => origin.trim().replace(/\/$/, ''))
