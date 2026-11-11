@@ -20,8 +20,11 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: err.message || 'Internal server error' });
 });
 
-const start = async () => {
-  try {
+let initializationPromise;
+
+const initialize = () => {
+  if (!initializationPromise) {
+    initializationPromise = (async () => {
     // Load database/models and route modules inside the startup guard. This
     // keeps Vercel's health endpoint available and turns startup failures into
     // useful runtime logs instead of a generic FUNCTION_INVOCATION_FAILED.
@@ -124,16 +127,35 @@ const start = async () => {
     // Vercel invokes the exported Express app as a serverless function and
     // must not keep a persistent listener open. Local development still uses
     // the normal `npm start` listener.
-    if (!process.env.VERCEL) {
-      app.listen(PORT, () => {
-        console.log(`Server running on http://localhost:${PORT}`);
-        startOverdueCron();
-      });
-    }
-  } catch (error) {
-    console.error('Unable to start server:', error);
+      if (!process.env.VERCEL) {
+        app.listen(PORT, () => {
+          console.log(`Server running on http://localhost:${PORT}`);
+          startOverdueCron();
+        });
+      }
+    })();
   }
+
+  return initializationPromise;
 };
 
-module.exports = app;
-start();
+// Vercel can invoke the exported function before an async startup routine has
+// finished. Await initialization at the request boundary so API routes are
+// mounted before login and other requests are handled.
+if (process.env.VERCEL) {
+  module.exports = async (req, res) => {
+    try {
+      await initialize();
+      return app(req, res);
+    } catch (error) {
+      console.error('Unable to initialize server:', error);
+      return res.status(503).json({ error: 'Terrava backend initialization failed' });
+    }
+  };
+} else {
+  module.exports = app;
+  initialize().catch((error) => {
+    console.error('Unable to start server:', error);
+    process.exitCode = 1;
+  });
+}
