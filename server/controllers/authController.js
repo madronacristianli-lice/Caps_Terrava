@@ -6,6 +6,7 @@ const { generateToken, generateLedgerToken } = require('../utils/jwt');
 const crypto = require('crypto');
 const { sendOtpSms } = require('../services/textbee');
 const { OAuth2Client } = require('google-auth-library');
+const { persistUploadedFiles, removeStoredFile } = require('../services/storage');
 
 const PROFILE_FIELDS = ['id', 'email', 'full_name', 'first_name', 'middle_name', 'last_name',
   'extension_name', 'role', 'phone', 'phone2', 'birthdate', 'address', 'branch',
@@ -260,6 +261,7 @@ exports.updateProfile = async (req, res) => {
 
 const deleteOldPhoto = (photoUrl) => {
   if (!photoUrl) return;
+  void removeStoredFile(photoUrl);
   const fileName = path.basename(photoUrl);
   const filePath = path.join(__dirname, '..', 'uploads', fileName);
   try {
@@ -276,7 +278,7 @@ exports.uploadProfilePhoto = async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     deleteOldPhoto(user.photo_url);
-    const photoUrl = `/uploads/${req.file.filename}`;
+    const [photoUrl] = await persistUploadedFiles([req.file], 'profiles');
     await user.update({ photo_url: photoUrl });
     res.json({ user: formatUser(user), photo_url: photoUrl });
   } catch (error) {

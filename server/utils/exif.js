@@ -28,16 +28,17 @@ async function extractGps(filePath) {
 /**
  * Build photo geotag records from uploaded multer files.
  * @param {Array<import('multer').File>} files
+ * @param {Array<string>} urls
  * @returns {Promise<Array<{url: string, lat: number, lng: number, source: string}>>}
  */
-async function buildPhotoGeotags(files) {
+async function buildPhotoGeotags(files, urls = []) {
   if (!Array.isArray(files) || files.length === 0) return [];
   const tags = [];
-  for (const file of files) {
+  for (const [index, file] of files.entries()) {
     const coords = await extractGps(file.path);
     if (coords) {
       tags.push({
-        url: `/uploads/${file.filename}`,
+        url: urls[index] || `/uploads/${file.filename}`,
         lat: coords.lat,
         lng: coords.lng,
         source: coords.source

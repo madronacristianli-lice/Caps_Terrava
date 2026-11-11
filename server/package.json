@@ -9,7 +9,8 @@
     "seed": "node seeders/seed.js",
     "rebuild:chain": "node scripts/rebuildChain.js",
     "deploy:eth": "npx hardhat run scripts/deployEthereum.js --network sepolia",
-    "migrate:eth": "node scripts/migrate_eth_tx_hash.js"
+    "migrate:eth": "node scripts/migrate_eth_tx_hash.js",
+    "migrate:photos": "node scripts/migratePhotosToStorage.js"
   },
   "keywords": [],
   "author": "",

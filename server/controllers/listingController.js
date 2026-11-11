@@ -2,8 +2,9 @@ const db = require('../models');
 const { Op } = require('sequelize');
 const { createNotification } = require('./notificationController');
 const { buildPhotoGeotags } = require('../utils/exif');
+const { persistUploadedFiles } = require('../services/storage');
 
-const getUploadUrls = (files) => files.map((f) => `/uploads/${f.filename}`);
+const getUploadUrls = (files, folder = 'listings') => persistUploadedFiles(files, folder);
 
 const parseOptionalJson = (value, field) => {
   if (!value) return null;
@@ -72,7 +73,8 @@ exports.create = async (req, res) => {
       return res.status(400).json({ error: 'Title, contract price, area, and location are required.' });
     }
 
-    const photoGeotags = req.files ? await buildPhotoGeotags(req.files) : [];
+    const photoUrls = req.files ? await getUploadUrls(req.files) : [];
+    const photoGeotags = req.files ? await buildPhotoGeotags(req.files, photoUrls) : [];
 
     const listing = await db.LandListing.create({
       seller_id: req.user.id,
@@ -83,7 +85,7 @@ exports.create = async (req, res) => {
       location_text: location_text.trim(),
       branch: seller?.branch || req.body.branch || 'Main Tagum',
       polygon_geojson: parsedPolygon,
-      photos: req.files ? getUploadUrls(req.files) : [],
+      photos: photoUrls,
       photo_geotags: photoGeotags,
       zoning_classification: valueOrCurrent(null, zoning_classification, parsedExtras.zoning_classification),
       land_title_status: valueOrCurrent(null, land_title_status, parsedExtras.land_title_status),
@@ -287,9 +289,9 @@ exports.update = async (req, res) => {
       photoGeotags = photoGeotags.filter((tag) => !removed.includes(tag.url));
     }
     if (req.files && req.files.length > 0) {
-      const newPhotoUrls = getUploadUrls(req.files);
+      const newPhotoUrls = await getUploadUrls(req.files);
       photos = [...photos, ...newPhotoUrls];
-      const newGeotags = await buildPhotoGeotags(req.files);
+      const newGeotags = await buildPhotoGeotags(req.files, newPhotoUrls);
       photoGeotags = [...photoGeotags, ...newGeotags];
     }
     if (photos.length > 0) {
