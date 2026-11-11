@@ -3,27 +3,17 @@ require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const db = require('./models');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const { start: startOverdueCron } = require('./jobs/overdueCron');
 
 app.use(cors());
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-app.use('/api/auth', require('./routes/auth'));
-app.use('/api/listings', require('./routes/listings'));
-app.use('/api/inquiries', require('./routes/inquiries'));
-app.use('/api/transactions', require('./routes/transactions'));
-app.use('/api/favorites', require('./routes/favorites'));
-app.use('/api/admin', require('./routes/admin'));
-app.use('/api/blockchain', require('./routes/blockchain'));
-app.use('/api/notifications', require('./routes/notifications'));
-app.use('/api/installments', require('./routes/installments'));
-
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
+app.get('/', (req, res) => res.json({ service: 'Terrava API', status: 'ok' }));
+app.get('/favicon.ico', (req, res) => res.status(204).end());
 
 app.use((err, req, res, next) => {
   console.error(err);
@@ -32,6 +22,22 @@ app.use((err, req, res, next) => {
 
 const start = async () => {
   try {
+    // Load database/models and route modules inside the startup guard. This
+    // keeps Vercel's health endpoint available and turns startup failures into
+    // useful runtime logs instead of a generic FUNCTION_INVOCATION_FAILED.
+    const db = require('./models');
+    const { start: startOverdueCron } = require('./jobs/overdueCron');
+
+    app.use('/api/auth', require('./routes/auth'));
+    app.use('/api/listings', require('./routes/listings'));
+    app.use('/api/inquiries', require('./routes/inquiries'));
+    app.use('/api/transactions', require('./routes/transactions'));
+    app.use('/api/favorites', require('./routes/favorites'));
+    app.use('/api/admin', require('./routes/admin'));
+    app.use('/api/blockchain', require('./routes/blockchain'));
+    app.use('/api/notifications', require('./routes/notifications'));
+    app.use('/api/installments', require('./routes/installments'));
+
     // Vercel runs this file inside short-lived serverless functions. Running
     // schema synchronization and column migrations during every cold start
     // can exceed the function window and make even health checks fail. Keep
