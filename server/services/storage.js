@@ -23,10 +23,25 @@ async function ensureBucket() {
         body: JSON.stringify({ id: bucket, name: bucket, public: true })
       });
 
-      // A 409 means another request already created it.
+      // Supabase may report an existing bucket as HTTP 409, or as HTTP 400
+      // with the BucketAlreadyExists/Duplicate error code. Both mean the
+      // desired bucket is ready and migration/upload can continue.
       if (!response.ok && response.status !== 409) {
         const details = await response.text();
-        throw new Error(`Supabase Storage bucket setup failed (${response.status}): ${details.slice(0, 180)}`);
+        let errorCode = '';
+        try {
+          errorCode = JSON.parse(details).code || '';
+        } catch {
+          // Keep the raw response for the actionable error below.
+        }
+
+        const bucketAlreadyExists = errorCode === 'BucketAlreadyExists'
+          || errorCode === 'Duplicate'
+          || /bucketalreadyexists|already exists|duplicate/i.test(details);
+
+        if (!bucketAlreadyExists) {
+          throw new Error(`Supabase Storage bucket setup failed (${response.status}): ${details.slice(0, 180)}`);
+        }
       }
     })();
   }
