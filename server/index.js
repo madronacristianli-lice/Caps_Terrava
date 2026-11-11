@@ -29,7 +29,6 @@ const initialize = () => {
     // keeps Vercel's health endpoint available and turns startup failures into
     // useful runtime logs instead of a generic FUNCTION_INVOCATION_FAILED.
     const db = require('./models');
-    const { start: startOverdueCron } = require('./jobs/overdueCron');
 
     app.use('/api/auth', require('./routes/auth'));
     app.use('/api/listings', require('./routes/listings'));
@@ -46,7 +45,10 @@ const initialize = () => {
     // can exceed the function window and make even health checks fail. Keep
     // migrations available for local development, and only opt into them on
     // Vercel explicitly after reviewing the database migration plan.
-    const shouldRunMigrations = !process.env.VERCEL || process.env.RUN_DB_MIGRATIONS === 'true';
+    // Never run schema changes from a Vercel request. A serverless cold start
+    // must be able to serve the API even when the database is temporarily
+    // unavailable, and migrations belong in a controlled maintenance job.
+    const shouldRunMigrations = !process.env.VERCEL && process.env.RUN_DB_MIGRATIONS === 'true';
 
     if (!shouldRunMigrations) {
       console.log('Skipping database migrations in Vercel runtime');
@@ -130,7 +132,7 @@ const initialize = () => {
       if (!process.env.VERCEL) {
         app.listen(PORT, () => {
           console.log(`Server running on http://localhost:${PORT}`);
-          startOverdueCron();
+          require('./jobs/overdueCron').start();
         });
       }
     })();
@@ -144,6 +146,20 @@ const initialize = () => {
 // mounted before login and other requests are handled.
 if (process.env.VERCEL) {
   module.exports = async (req, res) => {
+    // Keep platform probes and browser requests independent from database and
+    // optional integration startup. These endpoints are also useful for
+    // confirming that the deployed function itself is alive.
+    const requestPath = String(req.url || '').split('?')[0];
+    if (requestPath === '/api/health') {
+      return res.status(200).json({ status: 'ok' });
+    }
+    if (requestPath === '/') {
+      return res.status(200).json({ service: 'Terrava API', status: 'ok' });
+    }
+    if (requestPath === '/favicon.ico') {
+      return res.status(204).end();
+    }
+
     try {
       await initialize();
       return app(req, res);
