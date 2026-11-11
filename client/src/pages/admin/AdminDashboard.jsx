@@ -3049,7 +3049,15 @@ export default function AdminDashboard() {
                     <Edit3 className="w-3.5 h-3.5" /> Edit Profile
                   </button>
                 )}
-                <button onClick={() => setViewUser(null)} className="p-2 rounded-xl hover:bg-gray-100 transition"><X className="w-5 h-5 text-gray-500" /></button>
+                <button
+                  type="button"
+                  onClick={() => setViewUser(null)}
+                  aria-label="Close profile"
+                  title="Close profile"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600 focus:outline-none focus:ring-2 focus:ring-red-200"
+                >
+                  <X className="h-5 w-5" />
+                </button>
               </div>
             </div>
 
@@ -3112,14 +3120,6 @@ export default function AdminDashboard() {
               </section>
             </div>
 
-            <div className="sticky bottom-0 -mx-6 -mb-6 mt-6 px-6 py-4 bg-white border-t border-gray-100">
-              <button
-                onClick={() => setViewUser(null)}
-                className="w-full px-4 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition"
-              >
-                Close Profile
-              </button>
-            </div>
           </div>
         </div>
       )}
