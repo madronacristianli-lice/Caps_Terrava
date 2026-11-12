@@ -3,7 +3,7 @@ import { MapContainer, TileLayer, Polygon, Popup, Marker, CircleMarker, Polyline
 import L from 'leaflet'
 import { Home, Building2, Wheat, Factory, MapPinned, ChevronRight } from 'lucide-react'
 import { useAuth } from '../context/AuthContext.jsx'
-import { BRANCH_COORDINATES, BRANCH_ZOOM } from '../utils/branches.js'
+import { BRANCH_COORDINATES, BRANCH_ZOOM, MINDANAO_BOUNDS } from '../utils/branches.js'
 import { DEFAULT_BOUNDARY_POINT_COLOR, DEFAULT_BOUNDARY_POINT_SIZE } from '../utils/mapColors.js'
 import { resolveMediaUrl } from '../utils/media.js'
 import 'leaflet/dist/leaflet.css'
@@ -60,10 +60,6 @@ L.Icon.Default.mergeOptions({
 // Keep the neutral map view aligned with the main branch instead of the old
 // Tagum/Panabo mixed coordinate that was previously used here.
 const defaultCenter = BRANCH_COORDINATES['Main Tagum']
-// Keep every map focused on Mindanao and its immediate coastal area.
-// The strict bounds prevent panning out to the rest of the Philippines or
-// accidentally drifting to another country while retaining all Terrava branches.
-const MINDANAO_BOUNDS = [[4.5, 119.0], [10.8, 126.9]]
 
 function getCentroid(coords) {
   if (!coords || coords.length === 0) return null
@@ -426,16 +422,17 @@ function ActivePolygon({ listing, isActive, onSelect, adminActions }) {
   )
 }
 
-function PhotoGeotagMarkers({ listing }) {
-  if (!listing.photo_geotags?.length) return null
+function PhotoGeotagMarkers({ geotags, isDraft = false }) {
+  if (!geotags?.length) return null
 
   return (
     <>
-      {listing.photo_geotags.map((tag, i) => (
+      {geotags.map((tag, i) => (
         <CircleMarker
-          key={`photo-${listing.id}-${i}`}
+          key={isDraft ? tag.url : i}
           center={[tag.lat, tag.lng]}
-          radius={5}
+          radius={isDraft ? 9 : 5}
+          bubblingMouseEvents={!isDraft}
           pathOptions={{ color: '#2563eb', fillColor: '#3b82f6', fillOpacity: 0.9, weight: 2 }}
         >
           <Popup>
@@ -558,6 +555,7 @@ export default function MapView({
   boundaryPoints = [],
   boundaryPointColors = [],
   boundaryPointSizes = [],
+  draftPhotoGeotags = [],
   onAddBoundaryPoint = null,
   fitBounds = false,
   adminActions = null,
@@ -613,6 +611,7 @@ export default function MapView({
         {fitBounds && <FitBounds listings={display} />}
         {onAddBoundaryPoint && <BoundaryPointPicker onAddPoint={onAddBoundaryPoint} />}
         <DraftBoundary points={boundaryPoints} pointColors={boundaryPointColors} pointSizes={boundaryPointSizes} />
+        <PhotoGeotagMarkers geotags={draftPhotoGeotags} isDraft />
         {display.map((listing) => {
           const isActive = selectedListingId
             ? listing.id === selectedListingId
@@ -637,7 +636,7 @@ export default function MapView({
           )
         })}
         {display.map((listing) => (
-          <PhotoGeotagMarkers key={`geotags-${listing.id}`} listing={listing} />
+          <PhotoGeotagMarkers key={`geotags-${listing.id}`} geotags={listing.photo_geotags} />
         ))}
       </MapContainer>
     </div>

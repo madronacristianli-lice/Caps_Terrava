@@ -20,6 +20,15 @@ import ConfirmDialog from './ConfirmDialog.jsx'
 import { displayBranchName, normalizeBranchName, MINDANAO_CITIES, BRANCH_COORDINATES, BRANCH_ZOOM } from '../utils/branches.js'
 import { BOUNDARY_POINT_COLORS, DEFAULT_BOUNDARY_POINT_COLOR, BOUNDARY_POINT_SIZES, DEFAULT_BOUNDARY_POINT_SIZE } from '../utils/mapColors.js'
 import { resolveMediaUrl } from '../utils/media.js'
+import { readPhotoGeotag } from '../utils/photoGeotags.js'
+
+const PHOTO_GPS_LABELS = {
+  checking: 'Checking for GPS…',
+  located: 'GPS pin added',
+  missing: 'No GPS coordinates',
+  outside: 'GPS outside the Mindanao map',
+  unreadable: 'Could not read photo GPS',
+}
 
 const BRANCHES = [
   'Main Tagum',
@@ -223,7 +232,6 @@ export default function CreateListingForm({ onSubmit, initialBranch = '', initia
   const [pointSize, setPointSize] = useState(DEFAULT_BOUNDARY_POINT_SIZE)
   const [mapExpanded, setMapExpanded] = useState(false)
   const [photos, setPhotos] = useState([])
-  const [photoPreviews, setPhotoPreviews] = useState([])
   const [tctPreview, setTctPreview] = useState(null)
   const [taxPreview, setTaxPreview] = useState(null)
   const [formErrors, setFormErrors] = useState([])
@@ -231,6 +239,9 @@ export default function CreateListingForm({ onSubmit, initialBranch = '', initia
   const [draftLoaded, setDraftLoaded] = useState(false)
   const [confirmation, setConfirmation] = useState(null)
   const photoInputRef = useRef(null)
+  const photoUrlsRef = useRef(new Set())
+  const latestPhotoBatchRef = useRef(0)
+  const gisMapRef = useRef(null)
   const tctInputRef = useRef(null)
   const taxInputRef = useRef(null)
   const errorSummaryRef = useRef(null)
@@ -268,6 +279,14 @@ export default function CreateListingForm({ onSubmit, initialBranch = '', initia
   useEffect(() => {
     if (formErrors.length > 0) errorSummaryRef.current?.focus()
   }, [formErrors])
+
+  useEffect(() => {
+    const urls = photoUrlsRef.current
+    return () => {
+      urls.forEach((url) => URL.revokeObjectURL(url))
+      urls.clear()
+    }
+  }, [])
 
   const updateField = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -387,24 +406,52 @@ export default function CreateListingForm({ onSubmit, initialBranch = '', initia
   }
 
   const MAX_PHOTOS = 10
+  const draftPhotoGeotags = photos.filter((photo) => photo.status === 'located')
 
-  const handlePhotoSelect = (e) => {
-    const files = Array.from(e.target.files)
+  const focusPhotoOnMap = ({ lat, lng }, scrollToMap = false) => {
+    setMapCity('')
+    setMapCityFocus({ center: [lat, lng], zoom: 17 })
+    if (scrollToMap) gisMapRef.current?.scrollIntoView({ block: 'nearest' })
+  }
+
+  const handlePhotoSelect = async (e) => {
+    const files = Array.from(e.target.files || [])
+    e.target.value = ''
+    if (!files.length) return
+
     const currentTotal = (isEdit ? existingPhotos.length : 0) + photos.length
     if (currentTotal + files.length > MAX_PHOTOS) {
       const remaining = Math.max(0, MAX_PHOTOS - currentTotal)
       alert(`You can upload up to ${MAX_PHOTOS} photos total. You may only add ${remaining} more.`)
-      e.target.value = ''
       return
     }
-    setPhotos((prev) => [...prev, ...files])
-    setPhotoPreviews((prev) => [...prev, ...files.map((f) => URL.createObjectURL(f))])
+
+    const batch = ++latestPhotoBatchRef.current
+    const selected = files.map((file) => {
+      const url = URL.createObjectURL(file)
+      photoUrlsRef.current.add(url)
+      return { file, url, status: 'checking' }
+    })
+    setPhotos((prev) => [...prev, ...selected])
+
+    const results = await Promise.all(selected.map(async (photo) => ({
+      ...photo,
+      ...await readPhotoGeotag(photo.file),
+    })))
+    const activeResults = results.filter((photo) => photoUrlsRef.current.has(photo.url))
+    if (!activeResults.length) return
+
+    const byUrl = new Map(activeResults.map((photo) => [photo.url, photo]))
+    setPhotos((prev) => prev.map((photo) => byUrl.get(photo.url) || photo))
+
+    const firstGeotag = activeResults.find((photo) => photo.status === 'located')
+    if (firstGeotag && batch === latestPhotoBatchRef.current) focusPhotoOnMap(firstGeotag)
   }
 
-  const removePhoto = (index) => {
-    URL.revokeObjectURL(photoPreviews[index])
-    setPhotos((prev) => prev.filter((_, i) => i !== index))
-    setPhotoPreviews((prev) => prev.filter((_, i) => i !== index))
+  const removePhoto = (url) => {
+    URL.revokeObjectURL(url)
+    photoUrlsRef.current.delete(url)
+    setPhotos((prev) => prev.filter((photo) => photo.url !== url))
   }
 
   const handleFileSelect = (e, field, setPreview) => {
@@ -494,7 +541,7 @@ export default function CreateListingForm({ onSubmit, initialBranch = '', initia
       reservation_fee: numericAmount(form.reservation_fee),
       monthly_payment_amount: numericAmount(form.monthly_payment_amount),
       polygon_geojson,
-      photos,
+      photos: photos.map((photo) => photo.file),
       _draftKey: draftKey
     }
 
@@ -743,7 +790,12 @@ export default function CreateListingForm({ onSubmit, initialBranch = '', initia
                 </div>
               )}
             </div>
-            <div className={mapExpanded ? 'fixed inset-4 z-[80] rounded-2xl border-2 border-emerald-200 bg-white p-2 shadow-2xl sm:inset-8' : 'relative h-[320px]'}>
+            {draftPhotoGeotags.length > 0 && (
+              <p className="mb-2 text-xs font-medium text-blue-800">
+                Blue dots mark where photos were taken. Draw the property boundary separately.
+              </p>
+            )}
+            <div ref={gisMapRef} className={mapExpanded ? 'fixed inset-4 z-[80] rounded-2xl border-2 border-emerald-200 bg-white p-2 shadow-2xl sm:inset-8' : 'relative h-[320px]'}>
               <button
                 type="button"
                 onClick={() => setMapExpanded((expanded) => !expanded)}
@@ -760,6 +812,7 @@ export default function CreateListingForm({ onSubmit, initialBranch = '', initia
                 boundaryPoints={form.polygon_points}
                 boundaryPointColors={form.boundary_point_colors}
                 boundaryPointSizes={form.boundary_point_sizes}
+                draftPhotoGeotags={draftPhotoGeotags}
                 onAddBoundaryPoint={addMapPolygonPoint}
                 initialSatellite={false}
               />
@@ -968,24 +1021,46 @@ export default function CreateListingForm({ onSubmit, initialBranch = '', initia
               {(isEdit ? existingPhotos.length : 0) + photos.length} / {MAX_PHOTOS} photos
             </span>
             <span className="text-xs text-emerald-600 font-medium">
-              Photos with GPS metadata will be automatically geotagged
+              Photos with GPS coordinates show a pin on the GIS map before you save.
             </span>
           </button>
-          {photoPreviews.length > 0 && (
-            <div className="flex flex-wrap gap-3 mt-4">
-              {photoPreviews.map((src, i) => (
-                <div key={i} className="relative group w-24 h-24">
-                  <img src={src} alt="" className="w-full h-full object-cover rounded-lg border" />
-                  <button
-                    type="button"
-                    onClick={() => removePhoto(i)}
-                    className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                </div>
-              ))}
-            </div>
+          {photos.length > 0 && (
+            <>
+              <div className="mt-4 flex flex-wrap gap-3">
+                {photos.map((photo) => (
+                  <div key={photo.url} className="w-32">
+                    <div className="relative h-24">
+                      <img src={photo.url} alt={photo.file.name} className="h-full w-full rounded-lg border object-cover" />
+                      <button
+                        type="button"
+                        aria-label={`Remove ${photo.file.name}`}
+                        onClick={() => removePhoto(photo.url)}
+                        className="absolute right-1 top-1 flex h-7 w-7 items-center justify-center rounded-full bg-white text-slate-800 shadow-sm hover:bg-red-50 hover:text-red-700"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <p role="status" className={`mt-1.5 text-xs font-medium ${photo.status === 'located' ? 'text-emerald-700' : 'text-slate-600'}`}>
+                      {PHOTO_GPS_LABELS[photo.status]}
+                    </p>
+                    {photo.status === 'located' && (
+                      <button
+                        type="button"
+                        onClick={() => focusPhotoOnMap(photo, true)}
+                        className="mt-0.5 text-xs font-semibold text-blue-800 underline hover:text-blue-950"
+                      >
+                        View on GIS map
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {photos.some(({ status }) => status === 'missing' || status === 'unreadable') && (
+                <p className="mt-2 text-xs text-slate-600">
+                  For a GPS pin, select the original photo taken with camera location enabled. You can also place points manually on the GIS map.
+                </p>
+              )}
+            </>
           )}
         </div>
       </SectionCard>

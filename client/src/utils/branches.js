@@ -24,6 +24,7 @@ export const BRANCH_COORDINATES = {
 }
 
 export const BRANCH_ZOOM = 13
+export const MINDANAO_BOUNDS = [[4.5, 119.0], [10.8, 126.9]]
 
 // City centers used by the add/edit GIS map quick navigator. These are only
 // navigation shortcuts; they do not change the listing's saved coordinates.
